@@ -18,6 +18,10 @@ default: &default
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  # Connection settings come from the environment (set in compose.yaml); no secrets in the repo.
+  host: <%= ENV.fetch("DB_HOST", "localhost") %>
+  username: <%= ENV.fetch("POSTGRES_USER", "freight") %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD", "freight") %>
 
 
 development:

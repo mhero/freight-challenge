@@ -1,24 +1,38 @@
-# README
+# Freight challenge
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+Ruby on Rails (API-only, used as application and persistence layer) + PostgreSQL, run entirely with Docker.
+Challenge spec: `docs/challenge/README.md`. Sample feed: `db/feeds/response.json`.
 
-Things you may want to cover:
+**Status: Step 01 (bootstrap + data policies).** The CLI and routing arrive in later steps.
 
-* Ruby version
+## Requirements
+Docker with Compose v2. Nothing else.
 
-* System dependencies
+## Commands
+```bash
+docker compose up --build -d        # build, start PostgreSQL (healthy) and the app container, prepare the DB
+docker compose run --rm test        # full RSpec suite + SimpleCov summary (separate test database)
+docker compose down                 # stop (data kept in the pgdata volume)
+docker compose down -v              # stop and wipe the database
+```
+Later steps add: `docker compose exec -T app bin/freight < input.txt` (or `run --rm -T app ...`).
+Migration output goes to stderr, so stdout only carries the CLI result.
 
-* Configuration
+## Configuration
+| Variable | Default | Use |
+|----------|---------|-----|
+| `POSTGRES_USER` | `freight` | DB user (db and app) |
+| `POSTGRES_PASSWORD` | `freight` | DB password; local-only default, override via shell or `.env` |
+| `DB_HOST` | `db` in Compose | DB host |
+| `RAILS_ENV` | `development` (`test` for the test service) | Rails env |
 
-* Database creation
+The database is not published on a host port.
 
-* Database initialization
+## Design docs (read before Step 02)
+- `docs/data_policy.md`: findings in the data, conflict/missing-data/currency/routing policies
+- `docs/error_contract.md`: CLI stdout/stderr/exit codes
+- `docs/po_questions.md`: questions for the PO
 
-* How to run the test suite
-
-* Services (job queues, cache servers, search engines, etc.)
-
-* Deployment instructions
-
-* ...
+## Base-project changes (Step 01)
+Production-oriented Dockerfile now defaults to `development` and keeps test gems; removed `COPY vendor/*` (no `vendor/` dir, it breaks the build); `config/database.yml` reads host/user/password from env; entrypoint runs `db:prepare` for every command (to stderr); SimpleCov added; `compose.yaml` added.
+Left untouched for now: Kamal files, Solid Cache/Queue/Cable gems (Queue is reserved for the optional Step 08 worker), existing `.github` workflow (Brakeman, bundler-audit, RuboCop). The Docker RSpec CI job comes in Step 07.

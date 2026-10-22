@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 # check=error=true
 
-# This Dockerfile is designed for production, not development. Use with Kamal or build'n'run by hand:
-# docker build -t freight_challenge .
-# docker run -d -p 80:80 -e RAILS_MASTER_KEY=<value from config/master.key> --name freight_challenge freight_challenge
+# Freight challenge: one image used by every Compose service (CLI, tests, later a worker).
+# Run everything through `docker compose` (see README.md). The base Rails Dockerfile was
+# production-oriented; it now defaults to RAILS_ENV=development and keeps the test gems so
+# the same image can run RSpec.
 
 # For a containerized dev environment, see Dev Containers: https://guides.rubyonrails.org/getting_started_with_devcontainer.html
 
@@ -21,10 +22,8 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Set production environment variables and enable jemalloc for reduced memory usage and latency.
-ENV RAILS_ENV="production" \
-    BUNDLE_DEPLOYMENT="1" \
+ENV RAILS_ENV="development" \
     BUNDLE_PATH="/usr/local/bundle" \
-    BUNDLE_WITHOUT="development" \
     LD_PRELOAD="/usr/local/lib/libjemalloc.so"
 
 # Throw-away build stage to reduce size of final image
@@ -36,7 +35,6 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Install application gems
-COPY vendor/* ./vendor/
 COPY Gemfile Gemfile.lock ./
 
 RUN bundle install && \
@@ -59,7 +57,8 @@ FROM base
 
 # Run and own only the runtime files as a non-root user for security
 RUN groupadd --system --gid 1000 rails && \
-    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
+    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash && \
+    chown rails:rails /rails
 USER 1000:1000
 
 # Copy built artifacts: gems, application

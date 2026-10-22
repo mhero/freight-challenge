@@ -1,0 +1,46 @@
+name: freight-challenge
+
+x-app: &app
+  build: .
+  image: freight-challenge:dev
+  depends_on:
+    db:
+      condition: service_healthy
+  environment: &app-env
+    DB_HOST: db
+    POSTGRES_USER: ${POSTGRES_USER:-freight}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-freight}
+    RAILS_ENV: development
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-freight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-freight}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # No ports published: only the app containers can reach the database.
+
+  # Idle container that keeps the prepared app available for `docker compose exec`.
+  # The CLI is added in a later step.
+  app:
+    <<: *app
+    command: ["sleep", "infinity"]
+
+  # `docker compose run --rm test` runs the full RSpec suite against a separate test database.
+  test:
+    <<: *app
+    profiles: ["test"]
+    environment:
+      <<: *app-env
+      RAILS_ENV: test
+    command: ["bundle", "exec", "rspec"]
+
+volumes:
+  pgdata:
