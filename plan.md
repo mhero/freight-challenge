@@ -1,4 +1,4 @@
-# Incremental Development Instructions — Freight Challenge
+# Incremental Development Instructions: Freight Challenge
 
 ## Role
 
@@ -6,24 +6,29 @@ Act as a senior Ruby on Rails engineer. Build a production-minded solution to th
 
 Follow the existing project's conventions where reasonable. Prioritize correctness, clear architecture, maintainability, and testability over cleverness or premature abstraction.
 
+Context that shapes every decision: the challenge is graded on Object Oriented concepts, SOLID, DRY and test coverage, and I will have to explain and defend every decision live. Prefer designs I can explain simply. Do not build infrastructure the challenge does not need.
+
 ## 1. Mandatory Incremental Workflow
 
 Work on **one step at a time**. Do not implement the entire roadmap at once.
 
 For each step:
 
-1. **Explain the step:** describe the goal, the design decisions, and why they matter.
-2. **List the files:** identify which files will be created, changed, or removed.
-3. **Implement the step:** make only the changes necessary for that step.
+1. **Explain the step:** goal, design decisions, and why they matter.
+2. **List the files:** which files will be created, changed, or removed.
+3. **Implement the step:** only the changes necessary for that step.
 4. **Add RSpec tests:** cover the new behavior and relevant edge cases.
-5. **Run the tests:** execute the relevant specs and the full test suite inside Docker when the environment allows it.
-6. **Review the implementation:** check correctness, duplication, coupling, naming, error handling, and unnecessary complexity.
-7. **Update documentation:** document new commands, assumptions, configuration, and behavior.
-8. **Package the project:** produce a complete, runnable ZIP named exactly `freight-challenge.zip`, containing the complete project needed to continue development, excluding generated artifacts, secrets, and unnecessary files.
-9. **Report the result:** summarize what changed, what tests ran, their results, and any limitations. Never claim tests passed unless they actually ran successfully.
+5. **Run the tests:** execute the relevant specs and the full suite inside Docker when the environment allows it.
+6. **Review the implementation:** correctness, duplication, coupling, naming, error handling, unnecessary complexity.
+7. **Update documentation:** new commands, assumptions, configuration, behavior.
+8. **Package the project:** produce a complete, runnable ZIP named exactly `freight-challenge.zip`, containing the whole project needed to continue development and preserving all work from previous steps, excluding generated artifacts, secrets, and unnecessary files.
+9. **Report the result:** what changed, which tests ran, their actual results, and any limitations. Never claim tests passed unless they actually ran successfully.
 10. **Wait for approval:** stop and wait for my approval before starting the next step.
 
-Deliver the ZIP after every completed step. Preserve all work from previous steps.
+Delivery:
+
+- Deliver the ZIP after **every** completed step.
+- I will copy each ZIP into the project's single git branch myself (the challenge requires one branch). Do not run git commands or create commits. Just make sure each ZIP is self-contained and runnable.
 
 If a test or implementation fails, investigate and fix it before declaring the step complete. If something cannot be verified in the current environment, state that explicitly.
 
@@ -33,343 +38,304 @@ Before implementation:
 
 - Read the complete challenge README.
 - Inspect the supplied `response.json` and understand its structure, including duplicate or conflicting data.
-- Inspect the entire Rails base ZIP before modifying anything.
+- Inspect the entire Rails base ZIP before modifying anything. If the ZIP is missing from the conversation, stop and tell me instead of generating a new application.
 - Identify the existing Ruby and Rails versions, dependencies, application structure, database configuration, Docker setup, tests, and conventions.
 - Identify incompatibilities or missing prerequisites before making architectural changes.
-- Preserve useful existing code and configuration. Do not replace the supplied Rails application with a newly generated application.
+- Preserve useful existing code and configuration. Do not replace the supplied Rails application with a newly generated one.
 - Present the initial assessment and proposed first step before proceeding.
 
 Do not invent requirements that are not supported by the challenge. Clearly distinguish challenge requirements from implementation decisions and assumptions.
 
 ## 3. Architecture and Design Principles
 
-Use **Rails as the application and persistence layer**, with PostgreSQL as the shared database.
+Use **Rails as the application and persistence layer**, with PostgreSQL as the shared database. Reasons for this choice (to be reflected in the README): persistence is genuinely required for saved searches across feeds, a central database supports future multiple interfaces and concurrent users, and Rails conventions (models, migrations, constraints, validations, RSpec) keep the code organized and easy to defend.
 
 The CLI is an interface, not the owner of business logic.
 
-Use these architectural boundaries:
+Architectural boundaries:
 
-- **CLI:** accepts input, invokes application functionality, and writes the required output to stdout. Diagnostics and errors must go to stderr when appropriate.
-- **Application services:** coordinate use cases such as importing feeds, calculating routes, searching rates, and reevaluating saved searches.
-- **Domain logic:** implements freight calculations, route selection, pricing, currency conversion, and other business rules independently of CLI concerns.
-- **Persistence:** stores normalized data, feed history, relevant source data, and saved searches in PostgreSQL.
-- **Background processing:** handles asynchronous work such as feed processing and saved-search reevaluation where appropriate.
-- **Adapters:** isolate external feed formats and other integration details from domain logic.
+- **Domain (plain Ruby):** freight calculations, route search, pricing, currency conversion, and criteria. These are plain Ruby objects with **no ActiveRecord inside**. They receive data as plain value objects and are testable without a database.
+- **Criteria as pluggable strategies:** `cheapest-direct`, `cheapest` and `fastest` are separate strategy objects behind a common interface, so a new criterion can be added without modifying existing code (the challenge says new requirements are coming).
+- **Persistence (adapter):** ActiveRecord models and a repository or mapper layer convert between database rows and domain objects. The domain never depends on persistence.
+- **Application services:** coordinate use cases such as importing feeds, searching routes, and reevaluating saved searches.
+- **Feed adapter:** isolates the external MapReduce JSON format from the domain, so changes to the provider payload do not spread through the application.
+- **CLI:** accepts input, calls an application service, writes the required output to stdout. Diagnostics and errors go to stderr.
 
-Keep responsibilities explicit. Avoid fat controllers, fat CLI commands, unnecessary abstractions, and business logic duplicated across interfaces.
-
-Do not introduce a separate gem merely because a module could theoretically become one. Extract a gem only when there is a concrete reuse or distribution requirement.
-
-Design the application so that future CLIs, scheduled jobs, webhooks, or other interfaces can invoke the same application services without duplicating business logic.
+Avoid fat CLI commands, unnecessary abstractions, and business logic duplicated across interfaces. Do not extract a gem unless there is a concrete reuse requirement. Design so that future CLIs, scheduled jobs, webhooks or other interfaces can call the same application services.
 
 ## 4. Docker and Docker Compose
 
 Everything needed to run the application must run in Docker. **Docker is the only required host dependency.**
 
-Use one Docker Compose project to manage the application.
+Services in one Docker Compose project:
 
-The architecture must include:
-
-- **PostgreSQL service:** uses the official PostgreSQL image and stores persistent data in a named Docker volume.
-- **Rails/application service:** contains the supplied Rails project, CLI, application services, and domain logic.
-- **Worker service:** runs background jobs when required. It should use the same application image as Rails unless a separate image is justified.
-
-The Rails/application and worker processes must connect to the same PostgreSQL database over the Compose internal network.
+- **PostgreSQL:** official image, persistent data in a named volume, health check, not exposed publicly.
+- **Application:** the supplied Rails project, CLI, services and domain logic.
+- **Worker: optional.** Not part of the initial build. Add it only in the optional last step, and only if everything else is solid. If added, it uses the same image as the application and a Postgres-backed queue (no Redis).
 
 Requirements:
 
-- Use environment variables for database credentials and other environment-specific configuration.
-- Do not commit secrets.
-- Configure database health checks and service dependencies so application processes wait for PostgreSQL to become ready.
-- Persist database data across container restarts.
-- Do not expose PostgreSQL publicly unless there is a clear development requirement.
-- Do not require separate Compose files or separate database instances for the CLI and worker.
-- Prefer one application image with different commands for different processes.
-- Keep the CLI executable from inside the application container.
-- Provide documented commands for starting, stopping, testing, importing data, and running the CLI.
-- Ensure the project can be built and run from a clean checkout using the documented commands.
+- Environment variables for credentials and environment-specific config. No committed secrets.
+- Application processes wait for PostgreSQL health before starting.
+- One application image, different commands for different processes.
+- The CLI must be executable from inside the application container with piped stdin, for example `docker compose run --rm -T app <cli> < input.txt`. Document the exact command.
 
-The normal startup workflow should be a single command:
+### Cold start (critical)
 
-`docker compose up --build`
+A reviewer will clone, start Docker, and run the CLI. It must work with minimal steps and return a correct result on the first attempt.
 
-Use `docker compose exec` for commands in an already-running application container and `docker compose run --rm` for one-off commands where appropriate.
+- The bundled `response.json` is imported **synchronously during container startup** (entrypoint or an explicit `db:seed`-style step), before the application is considered ready. The import must be idempotent, so restarts do not duplicate data.
+- The CLI must never run against an empty database because the seed was still pending. A search that fails only because the seed has not loaded would wrongly be saved as unfulfilled.
+- The normal startup workflow is a single command: `docker compose up --build`. Document one exact command sequence from clean checkout to printed result.
 
-Adapt service commands to the supplied Rails base project and its actual job-processing setup. Do not add a job framework without a demonstrated need.
+Provide documented commands for starting, stopping, testing, importing data, and running the CLI. Use `docker compose exec` for running containers and `docker compose run --rm` for one-off commands.
 
 ## 5. Database, Feed Ingestion, and Data Quality
 
-External feed data must be ingested into PostgreSQL rather than existing only in CLI memory.
+External feed data must be ingested into PostgreSQL rather than existing only in CLI memory. Ingestion is a required part of the solution.
 
-Implement ingestion as a clearly defined application workflow:
+### Ingestion as a synchronous service
+
+Implement ingestion as a plain application service (for example `ImportFeed`) that runs **synchronously** and can be called from anywhere (CLI, entrypoint, tests, and later a job). It must not depend on being inside a background job.
+
+Workflow:
 
 1. Receive or locate the input feed.
-2. Validate its structure and required fields.
-3. Preserve the source data or enough information to audit and reproduce the import.
-4. Normalize and persist usable records.
-5. Record the import outcome, including rejected or invalid records where practical.
-6. Make the imported data available to the application's domain services.
-7. Trigger reevaluation of saved searches when relevant new data arrives.
+2. Validate structure and required fields.
+3. Compute a checksum and preserve the raw payload (or enough to audit and reproduce the import).
+4. Normalize and persist usable records using **batched** writes (`insert_all` / `upsert_all`) inside one transaction.
+5. Record the import outcome: timestamps, source identifier, status, counts, and rejected or invalid records.
+6. Make the data available to the domain services through the persistence adapter.
+7. **After the import transaction commits**, trigger reevaluation of saved searches by calling the reevaluation service directly.
+
+Large feeds: be explicit about limits. Batched inserts handle the sample and moderately large files. A truly huge file would need a streaming parser, which is out of scope. State this as a known limitation instead of building it.
 
 ### Data integrity
 
 - Handle duplicate records deliberately.
 - Handle conflicting rates deterministically.
-- Make import behavior idempotent where practical, so processing the same feed repeatedly does not create unintended duplicates.
+- Idempotent imports: the same feed (same checksum) processed twice must not create duplicates or duplicate side effects.
 - Use database constraints and transactions where they improve correctness.
-- Avoid silently discarding malformed or conflicting data.
-- Document the chosen policies and their tradeoffs.
+- Never silently discard malformed or conflicting data. Record it.
+- Document the chosen policies and tradeoffs.
 
 ### Versioning and auditability
 
-Design feed ingestion so that the application can identify which feed or import produced a record.
+Keep it simple and auditable: raw payload, checksum, and an import record. Each persisted record identifies the import that produced it. Do not overwrite history if that would prevent explaining a previous result. No generalized versioning framework.
 
-Evaluate an appropriate strategy for retaining import history and source versions. Prefer a simple, auditable design over a generalized versioning framework.
+Decide and document whether each feed is a **full snapshot** (the README says the service returns all available shipping options, which suggests so) or a delta, because this affects deduplication, removal of stale data, and saved-search reevaluation. State the assumption and list it as a question for the PO.
 
-Where relevant, record import timestamps, source identifiers, processing status, and validation errors.
+## 6. Data Policies (decide and document BEFORE writing code)
 
-Do not overwrite historical information if doing so would prevent explaining or reproducing a previous result. Decide which data must be retained and which can be safely updated, and document the decision.
+In Step 01, produce a short written data policy document and get my approval before any implementation. It must cover at least the following.
 
-Keep the domain model separate from the original external JSON format so that changes to the provider's payload do not unnecessarily spread throughout the application.
+### Known data issues in the supplied JSON
 
-## 6. Freight Challenge Requirements
+- **Conflicting rates:** sailing `MNOP` has two rates (456.78 USD and 812.00 USD). The choice changes which sailing is cheapest direct. Propose a policy with its justification and alternatives. Do not silently pick one. List it as a PO question.
+- **README vs JSON mismatches:** the README examples do not match the JSON. For example, the README shows ERXQ arriving 2022-02-06 while the JSON says 2022-02-12. Using the JSON as the source of truth, the fastest result may differ from the README's example. Do **not** write tests that assert the README's literal output where it contradicts the JSON. Flag every mismatch to me and list it as a PO question.
+- **Missing data:** sailings without rates, rates without sailings, missing exchange rates, malformed dates and amounts. Define the policy for each.
 
-Treat the supplied README as the authoritative specification. At minimum, preserve the following required behavior.
+### Currency and money
+
+- Exchange rates are EUR-based, so converting a non-EUR amount to EUR means **dividing** by the rate for that currency. EUR has an implicit rate of 1.
+- The rate used is the one for the sailing's `departure_date`. Define behavior when that exact date is missing.
+- Currency codes are uppercase in `rates` and lowercase in `exchange_rates`. Normalize.
+- Use `BigDecimal` everywhere, including when parsing JSON numbers. Never use floats for money.
+- Conversion is used **only for comparison**. The output keeps each leg's **original rate and currency**.
+- Define output formatting for amounts, including currencies without decimals such as JPY (`"97453"` vs `"97453.00"`).
+
+### Routing rules
+
+- Routes are searched over **sailings (legs) with time constraints**, not over a plain port graph. A connection is valid only if the next sailing departs at or after the previous sailing's arrival. Same-day connections and minimum layover are unspecified: choose a documented rule and list it as a PO question.
+- No arbitrary maximum number of legs. More than two legs must work.
+- Prevent cycles (do not revisit a port) and handle dead ends (for example ETRB to BRSSZ).
+- `fastest` means the shortest total journey time from first departure to last arrival, including layovers. Document this interpretation and any alternative (for example summing leg durations).
+- Deterministic tie-breaking for equal cost or equal duration, documented and tested.
+
+### Questions for the PO
+
+Maintain a "Questions for the PO" section in the README. The challenge asks for it. Include every ambiguity above plus any new ones found.
+
+## 7. Freight Challenge Requirements
+
+Treat the supplied README as the authoritative specification. Preserve at minimum:
 
 ### CLI contract
 
-The CLI must accept:
+Input (stdin), one value per line: origin port, destination port, criterion.
+Supported criteria: `cheapest-direct`, `cheapest`, `fastest`.
+Output (stdout): a JSON array of sailing legs with `origin_port`, `destination_port`, `departure_date`, `arrival_date`, `sailing_code`, `rate`, `rate_currency`.
 
-- Origin port
-- Destination port
-- Criterion
+The README defines **no error contract**. Define and document one, then ask me to approve it:
 
-The supported criteria are:
+- Unknown port code, invalid criterion, missing or extra input lines: message to stderr, non-zero exit code, nothing misleading on stdout.
+- Unfulfilled search: define exactly what stdout shows (for example `[]`) and confirm the search is saved.
+- stdout contains only the JSON result. Input lines are not echoed.
 
-- `cheapest-direct`: cheapest direct sailing.
-- `cheapest`: cheapest route, allowing direct or indirect routes with any number of legs.
-- `fastest`: fastest valid route.
+Keep the CLI thin and test it independently of the domain.
 
-Follow the README's exact input, output, and error-handling requirements. Keep the CLI thin and test its behavior independently of the underlying domain services.
-
-### Rates and currencies
-
-- Match rates to sailings using `sailing_code`.
-- Convert currencies using the supplied exchange-rate data.
-- Use the exchange rate associated with the sailing's `departure_date`, as specified by the challenge.
-- Handle missing, malformed, duplicated, or conflicting data according to an explicit documented policy.
-
-### Routes
-
-- Support direct and indirect routes as required.
-- Do not impose an arbitrary maximum number of legs unless the specification requires one.
-- Correctly determine route feasibility and calculate the relevant price or duration.
-- Avoid cycles and invalid paths.
-- Define how transit time, departure and arrival dates, and connections are handled based on the specification and available data.
-- Test edge cases such as missing rates, duplicate sailings, unavailable routes, and equal-cost or equal-duration alternatives.
-
-### Dirty data
-
-The supplied data can contain duplicates and conflicting values. Do not assume that every input record is valid or unique.
-
-Choose deterministic policies for conflicts, document them, and cover them with tests. Do not silently choose arbitrary values.
-
-### Saved searches
+### Saved searches (SLD-0004)
 
 If a search cannot be fulfilled, persist it so it can be reevaluated when a new feed arrives.
 
-When new data makes a previously unfulfilled search fulfillable:
+- Define search identity and deduplication. There is no user identity in the spec, so repeating the same search (origin, destination, criterion) must not create unbounded duplicates.
+- After a feed import commits, reevaluate unfulfilled searches by calling the reevaluation service directly. Reevaluation must be safe under retries.
+- When a search becomes fulfillable, record a **fulfillment event** in the database (a simple outbox-style table). A unique constraint guarantees one event per search fulfillment, so retries and concurrent runs cannot create duplicates.
+- Expose fulfillment through a documented mechanism, for example a CLI command that lists and acknowledges pending fulfillment events. The challenge leaves this open: document the choice, assumptions and tradeoffs.
 
-- Detect the change.
-- Record or expose the fulfillment event using a documented mechanism.
-- Avoid generating duplicate fulfillment notifications for the same event.
-- Ensure reevaluation is safe under retries and concurrent processing.
+Do not introduce extra infrastructure (queues, brokers, webhooks) for this.
 
-Choose the simplest mechanism that satisfies the challenge. A database-backed event or outbox may be appropriate if it improves reliability; do not introduce extra infrastructure without justification.
+## 8. RSpec and Testing
 
-The challenge allows implementation choices for the notification mechanism. Document the selected approach and its tradeoffs.
+**RSpec is mandatory.** All tests run through Docker. Use PostgreSQL for anything database-dependent. No SQLite.
 
-## 7. RSpec and Testing
+Test by layer:
 
-**RSpec is mandatory.** All tests must be runnable through Docker.
+- **Unit:** domain objects, currency conversion, route search, criteria strategies (no database needed).
+- **Service:** import and reevaluation workflows.
+- **Persistence/integration:** constraints, transactions, idempotency.
+- **CLI:** argument and stdin handling, stdout content, stderr, exit codes.
+- **End-to-end:** the three README scenarios against the sample data, plus an unfulfilled search that is later fulfilled by a second feed.
 
-Use tests appropriate to each layer:
+Required coverage of behavior:
 
-- **Unit specs:** domain objects and calculation logic.
-- **Service specs:** application workflows and coordination.
-- **Persistence/integration specs:** database behavior, transactions, constraints, ingestion, and concurrency-sensitive operations.
-- **Job specs:** background processing and retries, if jobs are introduced.
-- **CLI specs:** argument parsing, stdin/stdout behavior, exit codes, and errors.
-- **End-to-end/integration specs:** complete flows where appropriate.
+- Duplicate and conflicting rates (MNOP) under the documented policy.
+- Conversion with the departure-date exchange rate, dividing by the EUR-based rate.
+- Direct and multi-leg routes (including more than two legs), dead ends, cycles, unavailable routes, time-infeasible connections, and ties.
+- Import idempotency and invalid feed handling.
+- Saved-search fulfillment after a new feed, with no duplicate fulfillment events.
+- **One concurrency test:** two imports of the same feed checksum produce no duplicate records. Not a full concurrency suite.
 
-Testing requirements:
+Other requirements:
 
-- Use PostgreSQL for tests that depend on PostgreSQL behavior. Do not rely on SQLite as a substitute.
-- Cover the supplied sample data and important edge cases.
-- Test duplicate and conflicting rates explicitly.
-- Test currency conversion using the correct departure-date exchange rate.
-- Test direct and multi-leg routes, including unavailable routes and ties.
-- Test ingestion idempotency and invalid feed handling.
-- Test saved-search fulfillment after new data arrives.
-- Test retry behavior and duplicate-event prevention where applicable.
-- Include concurrency tests for behavior that could fail when multiple processes import data or reevaluate searches simultaneously.
-- Keep tests deterministic and isolated.
-- Do not make tests depend on live third-party services.
-- Run the full suite after each step when feasible, not only the newly added specs.
+- Add **SimpleCov** and report coverage. Test coverage is a graded criterion.
+- Tests are deterministic, isolated, and independent of live third-party services.
+- Run the full suite after each step when feasible.
+- Prefer integration tests against PostgreSQL over heavy mocking.
 
-Use factories or fixtures consistently with the supplied project. Avoid excessive mocking when an integration test against PostgreSQL would provide stronger confidence.
+## 9. GitHub and Continuous Integration
 
-## 8. GitHub and Continuous Integration
+Configure GitHub Actions to run on pushes and pull requests.
 
-Configure GitHub Actions so that automated checks run on pushes and pull requests.
+The workflow:
 
-The workflow must:
-
-1. Check out the repository.
-2. Set up Docker and Docker Compose as needed.
-3. Build the application image.
-4. Start PostgreSQL and wait for it to become healthy.
-5. Prepare the test database and run migrations.
-6. Execute the full RSpec suite inside Docker.
-7. Fail the workflow if the image build, database preparation, migrations, or tests fail.
-8. Clean up containers and services after execution.
+1. Checks out the repository.
+2. Builds the application image.
+3. Starts PostgreSQL and waits for health.
+4. Runs `db:prepare` (migrations).
+5. Runs the full RSpec suite inside Docker.
+6. Fails if the build, database preparation, or tests fail.
+7. Cleans up containers.
 
 Additional requirements:
 
-- Keep credentials and secrets out of source control.
-- Use isolated test data and a dedicated test database.
-- Run linting or static checks if they are already part of the project or are explicitly agreed upon.
-- Keep the workflow reproducible from a clean checkout.
+- No secrets in source control. Dedicated test database.
+- The workflow must depend only on files inside the submitted project.
+- Run linting (for example RuboCop) only if the base project already uses it.
 - Document how to run the same checks locally.
 
-Do not claim that GitHub integration is active or passing until the repository is connected, the workflow is committed, and an actual run has succeeded. If repository access or authorization is unavailable, create the workflow configuration in the project and explain what remains for me to do.
+Do not claim CI is active or passing until the workflow is committed to a connected repository and a real run has succeeded. If repository access is unavailable, create the workflow file and tell me what remains for me to do.
 
-## 9. Documentation
+## 10. Documentation
 
-Maintain a useful README that explains:
+Maintain a useful README covering:
 
-- Required host dependency: Docker.
-- How to build and start the application.
-- How to run the CLI.
-- How to run RSpec and other checks.
-- How to run database migrations.
-- How to import or reprocess a feed.
+- Required host dependency (Docker) and the exact clean-checkout-to-result command sequence.
+- How to build, start, stop, and run the CLI with piped stdin.
+- How to run RSpec and CI checks locally.
+- How to run migrations, and how to import or reprocess a feed.
 - How to inspect import outcomes and errors.
 - How saved searches are reevaluated and how fulfillment is exposed.
-- The data-cleaning, duplicate-resolution, and versioning policies.
+- Data policies: duplicates, conflicts, currency, versioning (see section 6).
+- The error contract.
 - Environment variables and configuration.
-- Architectural decisions and relevant tradeoffs.
+- Architectural decisions and tradeoffs, including why Rails, and known limitations (for example very large feeds).
+- **Questions for the PO** and an explicit list of assumptions.
 
-Document assumptions explicitly. Do not hide ambiguous requirements behind undocumented implementation choices.
-
-## 10. Code Quality
+## 11. Code Quality
 
 Follow idiomatic Ruby and Rails conventions.
 
-Prioritize:
+Prioritize: single responsibility, clear interfaces, high cohesion and low coupling, domain separated from framework code, readable and deterministic calculations, meaningful names, explicit error handling, database integrity, idempotent operations, maintainable tests, minimal justified dependencies.
 
-- Single responsibility and clear interfaces.
-- High cohesion and low coupling.
-- Separation of domain logic from framework and interface code.
-- Readable, deterministic calculations.
-- Meaningful names.
-- Explicit error handling.
-- Database integrity.
-- Idempotent operations where needed.
-- Maintainable tests.
-- Minimal, justified dependencies.
+Avoid: business logic in CLI parsing, unnecessary controllers or HTTP endpoints, a service object for every trivial method, premature gem extraction, unnecessary containers, swallowed exceptions, silently ignored invalid records, and claiming unexecuted tests or integrations succeeded.
 
-Avoid:
+## 12. Incremental Roadmap
 
-- Business logic inside CLI parsing code.
-- Unnecessary Rails controllers or HTTP endpoints when not required.
-- A service object for every trivial method.
-- Premature gem extraction.
-- Unnecessary microservices or containers.
-- In-memory-only persistence for required application data.
-- Arbitrary data-cleaning rules without documentation.
-- Swallowing exceptions or silently ignoring invalid records.
-- Claiming unexecuted tests or integrations succeeded.
+Follow in order. Explain and get approval before departing from it.
 
-## 11. Incremental Roadmap
+### Step 01: Inspect, bootstrap, and data policies
 
-Follow this roadmap in order unless inspection reveals a necessary dependency or the README requires a different order. Explain any proposed change and obtain approval before departing from the plan.
-
-### Step 01 — Inspect and bootstrap
-
-- Inspect the README, sample JSON, and supplied Rails ZIP.
-- Assess the existing architecture and dependencies.
-- Establish the Docker Compose setup with Rails/application and PostgreSQL services.
-- Establish the RSpec baseline and document startup/test commands.
+- Inspect the README, sample JSON, and the Rails ZIP. Assess architecture and dependencies.
+- Establish Docker Compose with application and PostgreSQL services, health checks, and the RSpec baseline (with SimpleCov).
+- Write the data policy document (section 6), the proposed error contract, and the first PO questions. **Wait for my approval of these policies before Step 02.**
+- Document startup and test commands.
 - Deliver a runnable `freight-challenge.zip`.
 
-### Step 02 — Feed ingestion and data validation
+### Step 02: Domain foundation (plain Ruby)
 
-- Implement feed parsing and validation.
-- Persist source/import information and normalized records.
-- Define duplicate and conflict policies.
-- Add import status and useful error reporting.
-- Add database constraints and idempotency where appropriate.
+- Value objects: port, sailing, rate, money, exchange rates.
+- Currency conversion with BigDecimal using the departure-date rate.
+- Rate resolution under the approved conflict policy.
+- The `cheapest-direct` strategy.
+- Unit specs with no database.
+
+### Step 03: Route search and remaining criteria
+
+- Time-feasible route search over legs, with cycle prevention and unlimited leg count.
+- Pluggable criteria: `cheapest` and `fastest` as strategies, with documented tie-breaking.
+- Route-focused unit specs, including dead ends, ties, and more than two legs.
+
+### Step 04: Persistence and feed ingestion
+
+- Migrations, models, constraints, and the repository/mapper layer to domain objects.
+- Synchronous `ImportFeed` service: validation, checksum, raw payload, batched transactional upsert, import record, rejected records.
+- Idempotency, the snapshot-vs-delta policy, and the single concurrency test.
 - Document the versioning and audit strategy.
-- Add RSpec coverage.
 
-### Step 03 — Cheapest direct
+### Step 05: Saved searches and fulfillment
 
-- Implement the direct-route pricing calculation.
-- Apply the specified currency conversion rules.
-- Define deterministic behavior for duplicate or conflicting rates.
-- Add unit and integration specs.
+- Persist unfulfilled searches with deduplication.
+- Reevaluation service called directly after a committed import.
+- Fulfillment event table with a unique constraint, plus the documented exposure mechanism.
+- Specs for retries and duplicate prevention.
 
-### Step 04 — Route foundation
+### Step 06: Thin CLI and cold start
 
-- Implement route representation and traversal.
-- Support valid indirect routes and the required connection rules.
-- Prevent cycles and invalid paths.
-- Add route-focused specs.
+- CLI over the application service, implementing the approved error contract.
+- Synchronous, idempotent seed import of the bundled `response.json` at startup.
+- CLI specs and end-to-end specs for the README scenarios.
+- Verify the single documented command from clean checkout to printed result.
 
-### Step 05 — Cheapest route
+### Step 07: CI, documentation, and hardening
 
-- Calculate the cheapest valid route, direct or indirect.
-- Handle missing rates and ties deterministically.
-- Add RSpec coverage.
+- GitHub Actions workflow (section 9).
+- Full test suite in Docker, migration and clean-start verification.
+- Review error handling, logging, architecture, and documentation, including the PO questions.
+- Deliver the final complete `freight-challenge.zip`.
 
-### Step 06 — Fastest route
+### Step 08 (optional): Job wrapper
 
-- Calculate the fastest valid route according to the README.
-- Define how duration and connections are interpreted.
-- Add RSpec coverage.
+Only if Steps 01 to 07 are complete and solid, and only with my approval:
 
-### Step 07 — Saved searches and fulfillment
+- A thin job that calls `ImportFeed` and then triggers reevaluation.
+- Worker service in Compose, same image, Postgres-backed queue.
+- Job specs. Synchronous import must remain available.
 
-- Persist unfulfilled searches.
-- Reevaluate them when relevant new feed data is ingested.
-- Detect newly fulfilled searches.
-- Implement a reliable, documented fulfillment event or notification mechanism.
-- Cover retries, idempotency, and concurrency-sensitive behavior.
+## 13. Completion Report for Every Step
 
-### Step 08 — Integration and hardening
-
-- Verify the full CLI contract.
-- Run the full test suite in Docker.
-- Verify migrations and clean-start behavior.
-- Complete GitHub Actions CI configuration.
-- Review error handling, logging, architecture, and documentation.
-- Deliver the complete project ZIP.
-
-## 12. Completion Report for Every Step
-
-At the end of each step, provide:
+At the end of each step provide:
 
 - What was implemented.
-- Important design decisions and assumptions.
+- Design decisions and assumptions.
 - Files created, changed, or removed.
 - RSpec commands executed and their actual results.
-- Any known limitations or unresolved questions.
-- Instructions for running the application and tests.
+- Known limitations or unresolved questions.
+- How to run the application and tests.
 - The complete `freight-challenge.zip`.
 
-Then **stop and wait for my approval** before beginning the next step.
+Then **stop and wait for my approval** before the next step.
 
 ## Final Rule
 
-Do not optimize for finishing quickly at the expense of correctness or maintainability. Build the solution incrementally, preserve the supplied Rails project, keep the database shared and persistent, make every step testable in Docker, and ensure that the CLI remains a thin interface over reusable application functionality.
+Do not optimize for finishing quickly at the expense of correctness or maintainability. Build incrementally, preserve the supplied Rails project, keep the domain in plain Ruby, keep the database shared and persistent, make every step testable in Docker, keep the CLI a thin interface over reusable services, and write down every data decision before coding it.
