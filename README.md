@@ -3,7 +3,7 @@
 Ruby on Rails (API-only, used as application and persistence layer) + PostgreSQL, run entirely with Docker.
 Challenge spec: `docs/challenge/README.md`. Sample feed: `db/feeds/response.json`.
 
-**Status: Step 01 (bootstrap + data policies).** The CLI and routing arrive in later steps.
+**Status: Step 01 (bootstrap + approved data policies).** The CLI and routing arrive in later steps.
 
 ## Requirements
 Docker with Compose v2. Nothing else.
@@ -29,8 +29,8 @@ Migration output goes to stderr, so stdout only carries the CLI result.
 The database is not published on a host port.
 
 ## Design docs (read before Step 02)
-- `docs/data_policy.md`: findings in the data, conflict/missing-data/currency/routing policies
-- `docs/error_contract.md`: CLI stdout/stderr/exit codes
+- `docs/data_policy.md`: findings in the data, approved conflict/missing-data/currency/routing policies and expected sample results
+- `docs/error_contract.md`: CLI stdout/stderr/exit codes (unknown well-formed ports are saved, not errors)
 - `docs/po_questions.md`: questions for the PO
 
 ## Base-project changes (Step 01)

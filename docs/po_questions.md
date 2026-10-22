@@ -1,13 +1,15 @@
 # Questions for the PO (grows each step)
 
-1. Q1 Rates: `MNOP` has two rates (456.78 and 812.00 USD). Which is valid, and is there a precedence rule (source, timestamp)?
-2. Q2 README `ERXQ` arrives 2022-02-06, the JSON says 2022-02-12. Which is right?
-3. Q3 Is "fastest" first departure to last arrival (layovers included) or the sum of leg durations? The README `fastest` example only holds under the second reading plus the 02-06 date. With the JSON, `QRST` (direct, 17 days) wins under either.
-4. Q4 Same-day connections and minimum layover: is arrival date = next departure date allowed? Any minimum hours? (Data has dates only.)
-5. Q5 Missing exchange rate for a departure date: skip the sailing, or use the latest earlier rate?
-6. Q6 Is each feed a full snapshot or a delta? Should sailings missing from a new feed be withdrawn?
-7. Q7 Should a search for a port we have never seen be saved or rejected?
-8. Q8 Who is notified when a saved search is fulfilled, and how (CLI listing is the assumption)?
-9. Q9 Rate semantics: is a rate per container, per shipment, all-in? Does it include fees? (Assumed comparable across sailings.)
-10. Q10 Should expired sailings (past departure) be excluded? The sample is from 2022 and is searched as-is.
-11. Q11 Rounding: amounts rejected if more decimals than the currency allows. Acceptable?
+Policies marked "assumed" are implemented as written and change only if the PO answers otherwise.
+
+1. **Q1 Conflicting rates.** `MNOP` has two rates (456.78 and 812.00 USD). Assumed: keep the highest, record the discarded one. Is there a precedence rule (source, timestamp)? Which is valid?
+2. **Q2 README vs JSON dates.** README `ERXQ` arrives 2022-02-06; the JSON says 2022-02-12. Which is right? (Also: README `cheapest-direct` example is a placeholder with 2024 dates and code `XXXX`.)
+3. **Q3 Definition of "fastest".** Assumed: first departure to last arrival, layovers included, so `QRST` (17 days) wins and differs from the README example `ERXQ + ETRG` (22 days). The alternative, sum of leg durations, only reproduces the README with the 02-06 date. Which one is intended, and should the README example be corrected?
+4. **Q4 Same-day connections and minimum layover.** Assumed allowed (`next.departure >= previous.arrival`, zero layover). The data has dates only, so this may be physically impossible. Is a minimum layover required?
+5. **Q5 Missing exchange rate or rate row.** Assumed: exclude the sailing from price comparison and log it. Should we instead use the latest earlier rate?
+6. **Q6 Snapshot vs delta feed.** Assumed: each feed is a full snapshot; sailings absent from the latest feed become inactive (kept for history). If feeds are deltas, nothing should be deactivated. Saved-search fulfilment is designed to work under both.
+7. **Q7 Unknown ports.** Assumed: a well-formed code not in current data is saved as an unfulfilled search with a stderr warning. Should such searches expire, or be limited?
+8. **Q8 Fulfilment notification.** Who is told when a saved search is fulfilled, and how? Assumed: a CLI command lists pending fulfilments.
+9. **Q9 Rate semantics.** Is a rate per container, per shipment, all-in? Assumed comparable across sailings.
+10. **Q10 Expired sailings.** Should past-departure sailings be excluded? The sample is from 2022 and is searched as-is.
+11. **Q11 Rounding.** Amounts with more decimals than the currency allows are rejected, not rounded. Acceptable?
