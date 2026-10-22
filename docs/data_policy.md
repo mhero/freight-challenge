@@ -32,10 +32,12 @@ Reference values (EUR = amount / EUR-based rate of the departure date): ABCD 523
 **P3 Connections (APPROVED: same-day allowed, zero minimum layover).** A connection is valid if `next.departure_date >= previous.arrival_date`, because the data only has dates. A same-day connection may be physically impossible (PO question Q4). The sample contains no same-day connection, so it is tested with fabricated data. No maximum number of legs. A port is never visited twice (origin included).
 
 **P4 Missing exchange rate or rate row (APPROVED: exclude and record).**
-- Non-EUR sailing with no exchange rate for its departure date: stored, **excluded from price comparison**, recorded in the import data-quality log (`missing_exchange_rate`). No carry-forward from nearby dates.
+- Non-EUR sailing with no exchange rate for its departure date: stored, left **unpriced**, recorded in the import data-quality log (`missing_exchange_rate`). No carry-forward from nearby dates.
 - EUR needs no exchange rate (implicit rate 1).
-- Sailing with no rate row at all: same treatment (`missing_rate`), excluded from price comparison.
-- Fabricated-data tests only; the sample never triggers this. PO question Q5.
+- Sailing with no rate row at all: same treatment (`missing_rate`).
+- Implementation detail (Step 02): an unpriced sailing is not in the searchable catalogue, so **no criterion can return it** (not only price comparison). Reason: it cannot be ranked or tie-broken by EUR price, and the README output needs a rate on every leg. Alternative: let `fastest` use it. PO question Q5.
+- A conflict that cannot be compared because one candidate lacks an exchange rate leaves the sailing unpriced too (we cannot know which rate is highest).
+- Fabricated-data tests only; the sample never triggers this.
 
 **P5 Unknown ports (APPROVED: CHANGED, save any well-formed code).** Input is trimmed and upper-cased, then validated against `[A-Z]{2}[A-Z0-9]{3}`.
 - Malformed: client error, exit 2.
@@ -49,7 +51,7 @@ Reference values (EUR = amount / EUR-based rate of the departure date): ABCD 523
 
 **P7 Currency and money.** `BigDecimal` everywhere; JSON numbers parsed as BigDecimal. Exchange rates are EUR-based, so non-EUR to EUR means **divide**. Currency codes upper-cased. Converted values are used only to compare and are never rounded before comparing. Output keeps each leg's original amount and currency.
 
-**P8 Output amount format.** Minor units per currency: 2 decimals for EUR/USD (`"589.30"`), 0 for JPY (`"97453"`), via a small explicit map (JPY 0, default 2). An amount with more decimals than the currency allows is rejected, not rounded.
+**P8 Output amount format.** Minor units per currency: 2 decimals for EUR/USD (`"589.30"`), 0 for JPY (`"97453"`), via a small explicit map (JPY 0, default 2). An amount whose value would be changed by rounding to the currency's minor units is rejected, not rounded (`"10.123"` USD, `"97453.5"` JPY). Trailing zeros lose nothing and are accepted (`"97453.00"` JPY prints as `"97453"`). Amounts must be plain decimals greater than zero (no signs, exponents, thousands separators).
 
 **P9 Data validation.** Duplicate sailing: identity is `sailing_code`; identical duplicates collapse; same code with different route or dates = conflict, both rejected and recorded. Rate without sailing, malformed or non-ISO dates, arrival before departure, non-positive or non-numeric amounts, missing fields: the record is rejected and recorded. A structurally invalid file (missing top-level keys, wrong types) is rejected whole. Nothing is dropped silently.
 
