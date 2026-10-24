@@ -3,7 +3,7 @@ module Freight
   # Freight::Criteria plus one entry here; existing criteria are not touched.
   module Criteria
     def self.all
-      [ CheapestDirect ].map(&:new)
+      [ CheapestDirect, Cheapest ].map(&:new)
     end
 
     def self.names
