@@ -1,168 +1,271 @@
 # Freight Challenge
 
-Shypple freight take-home in Ruby. A small Rails application (persistence and
-conventions) with the business rules in plain Ruby, driven by a stdin/stdout CLI.
+Finds the best shipping route between two ports from a MapReduce feed: the cheapest direct sailing,
+the cheapest route (any number of legs), or the fastest one. Searches that have no answer yet are
+saved and answered when a later feed makes them possible.
+
+Ruby on Rails app with the business rules in plain Ruby, used through a small stdin/stdout command line.
 The original task is in [docs/CHALLENGE.md](docs/CHALLENGE.md).
 
-**Docker is the only dependency.** PostgreSQL and the app run through Docker Compose.
+**Docker is the only thing you need installed.**
+
+## Contents
+
+[Quick start](#quick-start) · [Everyday commands](#everyday-commands) · [Searching](#searching) ·
+[Loading data](#loading-data) · [Saved searches](#saved-searches-and-notifications) · [Errors](#errors-and-exit-codes) ·
+[Configuration](#configuration) · [Tests](#tests) · [How it is built](#how-it-is-built) · [Rules](#business-rules) ·
+[Scale](#scale-path) · [Assumptions and questions](#assumptionsquestions)
 
 ## Quick start
 
 ```sh
+# 1. Start the app once. It builds the image, starts PostgreSQL, creates the tables and imports data/response.json.
+docker compose run -d --name freight-app app sleep infinity
+until docker logs freight-app 2>&1 | grep -q "Seed feed"; do sleep 1; done    # wait until setup is done
+
+# 2. Ask as many questions as you want.
 printf 'CNSHA\nNLRTM\ncheapest-direct\n' > input.txt
-docker compose run --rm -T app bin/freight < input.txt
+docker exec -i freight-app bin/freight < input.txt
+
+# 3. When you are done.
+docker rm -f freight-app && docker compose down
 ```
 
-The first run builds the image, starts PostgreSQL, runs migrations (`db:prepare`)
-and imports the bundled `data/response.json` before the command runs. stdout carries
-only the JSON result; setup logs go to stderr.
+You do not load any data by hand: the bundled `data/response.json` is imported during step 1, before the first
+answer. Setup runs once, so each query boots Rails once instead of three times. Result:
 
-| Task | Command |
+```json
+[
+  {
+    "origin_port": "CNSHA",
+    "destination_port": "NLRTM",
+    "departure_date": "2022-02-01",
+    "arrival_date": "2022-03-01",
+    "sailing_code": "ABCD",
+    "rate": "589.30",
+    "rate_currency": "USD"
+  }
+]
+```
+
+Only the result goes to stdout. Setup messages and errors go to stderr. If `freight-app` already exists
+(`docker: Error response ... name is already in use`), remove it first with `docker rm -f freight-app`.
+
+## Everyday commands
+
+These assume the container from the quick start is running.
+
+| I want to... | Command |
 | --- | --- |
-| Search | `docker compose run --rm -T app bin/freight < input.txt` |
-| Import a feed | `docker compose run --rm -v "$PWD/my.json:/feeds/my.json" app bin/freight import /feeds/my.json` |
-| List / ack notifications | `docker compose run --rm app bin/freight notifications list` and `... notifications ack 1 2` or `ack --through 5` |
-| Run the tests | `bin/docker-test` (any rspec args are passed on) |
-| Stop | `docker compose down` (add `-v` to delete the database) |
-| Lint, security scans | `docker compose run --rm app bin/rubocop` / `bin/brakeman` |
+| Search | `docker exec -i freight-app bin/freight < input.txt` |
+| Import a feed file | `docker cp my.json freight-app:/tmp/my.json` then `docker exec freight-app bin/freight import /tmp/my.json` |
+| See fulfilled saved searches | `docker exec freight-app bin/freight notifications list` |
+| Mark them as read | `docker exec freight-app bin/freight notifications ack 1 2` (or `ack --through 5`) |
+| See setup logs | `docker logs freight-app` |
+| Run the tests | `bin/docker-test` |
+| Run the scenario test pack | `bin/test-pack` (wipes the local database) |
+| Stop | `docker rm -f freight-app` then `docker compose down` (add `-v` to delete the database too) |
+| Style and security checks | `docker compose run --rm app bin/rubocop` and `bin/brakeman` |
 
-Input is three lines (origin port, destination port, criterion: `cheapest-direct`,
-`cheapest`, `fastest`). Output is a JSON array of legs, printed as in the challenge.
-CRLF, whitespace, lowercase and trailing blank lines are accepted.
+After changing code, rebuild the image (`docker compose build app`) and start the container again.
 
-### Environment variables
+### Alternative: one container per command
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `DATABASE_URL` | set in `compose.yml` | PostgreSQL connection |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `freight` / `freight` / `freight_development` | Local defaults; override with a `.env` file (git-ignored) |
-| `FEED_PATH` | `data/response.json` | Feed imported at container start |
-| `SEED_ON_BOOT` | `true` | `false` skips the startup import (always skipped for `RAILS_ENV=test`) |
+If you prefer not to keep a container around, every command also works as a one-off. Each one starts a fresh container,
+boots Rails three times (migrations check, seed check, the command) and removes the container; the data is safe in
+the PostgreSQL volume.
 
-The seed import is synchronous and idempotent (checksum), and imports are
-serialized with a PostgreSQL advisory lock, so two containers starting together are safe.
-
-## Error contract
-
-stdout only ever holds the result. Errors are one JSON line on stderr.
-
-| Case | stdout | stderr | Exit |
-| --- | --- | --- | --- |
-| Result found | JSON array of legs | empty | 0 |
-| No route or unknown port | `[]` | warning for unknown ports; the search is saved | 0 |
-| Malformed port, invalid criterion, missing or extra lines, bad command | empty | `{"error":{"code":422 or 400,...}}` | 2 |
-| Import file missing (404) or invalid feed (422) | empty | `{"error":{...}}` | 2 |
-| Internal error | empty | `{"error":{"code":500,...}}` | 1 |
-
-## Architecture
-
-```
-bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse, call a service, print
-                  |
-   application services (app/services)   SearchRoutes, ImportFeed, ImportFeedFile, SeedFeed,
-                  |                      ReevaluateSavedSearches, NotificationInbox, FeedMerge
-   domain, plain Ruby (app/domain/freight)   Rate, ExchangeRates, RateResolver, Sailing, Route,
-                  |                          RouteSearch, Criteria::{CheapestDirect,Cheapest,Fastest}
-   Freight::SailingRepository  <-- ActiveRecordSailingRepository (app/repositories) -- PostgreSQL
-   MapReduceFeed (app/feeds): the only code that knows the feed's JSON format
+```sh
+docker compose run --rm -T app bin/freight < input.txt
+docker compose run --rm -v "$PWD/my.json:/feeds/my.json" app bin/freight import /feeds/my.json
+docker compose run --rm app bin/freight notifications list
 ```
 
-- **Criteria are strategies** behind one base class (`max_legs`, `sort_key`, `prunable?`).
-  A new criterion is a new class plus one line in `Freight::Criteria.all`; existing ones are not modified.
-- **Route search** is a depth-first search that expands one port at a time through
-  `departures_from(port, on_or_after:)`, never loading the schedule. No port is visited
-  twice (no cycles), dead ends return nothing, and there is no limit on the number of legs.
-  Branch-and-bound pruning uses the criterion (cost and duration only grow with more legs).
+## Searching
 
+Input is three lines: origin port, destination port, criterion.
 
-## Data policies
+| Criterion | Returns |
+| --- | --- |
+| `cheapest-direct` | the cheapest single sailing |
+| `cheapest` | the cheapest route, direct or with any number of legs (all legs are listed) |
+| `fastest` | the route with the shortest time from first departure to last arrival |
 
-- **Source of truth is the JSON.** Exchange rates are EUR-based: USD to EUR **divides** by the
-  rate of the sailing's `departure_date` (exact date, no carry-forward). EUR is 1.
-  All math uses `BigDecimal`, including parsed JSON numbers.
-- **Conflicting rates** for one sailing (MNOP: 456.78 vs 812.00 USD): the **highest in EUR**
-  wins, independent of feed order; the discarded rate is recorded in the import issues.
-- **Unpriced sailings** (no rate, or no exchange rate for the date) are excluded from every
-  criterion and recorded. A conflict containing an unconvertible candidate leaves the sailing unpriced.
-- **Output keeps each leg's original rate and currency, exactly as received** (`"97453"` stays
-  `"97453"`). Precision is checked by value (JPY 0 decimals, USD/EUR 2, default 2); a rate that rounding
-  would change is rejected and recorded.
-- **Connections:** next departure date >= previous arrival date. Same-day connections are allowed
-  (dates only, so one may be physically impossible).
-- **Fastest** = first departure to last arrival, layovers included.
-- **Tie-breaks:** cheapest: total EUR, fewer legs, earlier arrival, sailing codes ascending.
-  Fastest: duration, total EUR, fewer legs, sailing codes ascending.
-- Sample results: cheapest-direct **ABCD** (~523.36 EUR); cheapest **ERXQ + ETRG** (~322.89 EUR);
-  fastest **QRST** (17 days vs 22).
+Ports are two letters plus three letters or digits (`CNSHA`). Lowercase, extra spaces, Windows line endings
+and trailing blank lines are accepted. Each leg is printed with its original rate and currency, exactly as
+received. If there is no route the output is `[]` (see [Errors](#errors-and-exit-codes)).
 
-## Import, versioning and inspecting results
+## Loading data
 
-`ImportFeed` validates the structure, stores the raw payload and an import record
-(`feed_imports`: status, checksum, counts), then upserts exchange rates and sailings and appends rates in batches in
-one transaction. Nothing is deleted.
+**At startup.** The entrypoint imports `data/response.json` (or the file named by `FEED_PATH`) before any
+command runs, so a search never meets an empty database. Importing the same file twice does nothing.
 
-- Same checksum already imported: no-op. Structurally invalid feeds are recorded as `failed`.
-- Each feed is a **full snapshot**: sailings missing from it become **inactive** (`active = false`),
-  and are excluded from searches. They return if a later feed contains them.
-- `rates` is append-only with `import_id`; the effective rate comes from the import that last saw the sailing.
-- A sailing code with different route or dates inside one feed is a conflict: excluded and recorded.
-  Identical duplicates collapse. Malformed records are rejected and recorded.
-- Rejections, conflicts, unpriced sailings and orphan rates live in `import_issues`:
+**Later.** `bin/freight import FILE` loads another feed. It does not erase the old data. Each feed is treated as a
+**full snapshot**:
+
+- Sailings in the new feed are added, or updated if the code already exists (the new route and dates win).
+- Sailings missing from the new feed become **inactive**: they are no longer searched but stay in the database,
+  and they come back if a later feed contains them.
+- Rates are never overwritten. Every import adds its own rate rows, and a sailing uses the rate from the
+  import that last saw it.
+- Exchange rates are updated per date and currency; dates absent from the new feed keep their old rates.
+- Everything is recorded: the raw file, a checksum, counts, and every rejected, conflicting or unpriced row
+  with its reason.
+
+Look at what an import rejected:
 
 ```sh
 docker compose exec db psql -U freight freight_development \
   -c "select kind, reference, reason from import_issues order by id"
 ```
 
+## Saved searches and notifications
+
+1. A search with no answer (no route, or an unknown port) prints `[]`, exits 0 and is **saved**. The same
+   question is saved only once while it is pending.
+2. After every import, pending searches are checked again. Those that now have a route are marked fulfilled and
+   a notification is written for each, once.
+3. You read them with `notifications list` and clear them with `notifications ack`.
+   `list` accepts `--status unacknowledged|acknowledged|all`, `--limit`, `--after-id` (paging), `--origin`,
+   `--destination` and `--criterion`.
+
+There are no user accounts: saved searches and notifications are shared by everyone using the database.
+
+A command line cannot be subscribed to, so notifications are pulled from an outbox table. Nothing is lost if
+nobody is listening, and large volumes are handled by paging and bulk acknowledgement. A push webhook is the natural
+next step; it needs endpoint registration, signing and retries, so it is documented here and not built.
+
+## Errors and exit codes
+
+| Situation | stdout | stderr | Exit |
+| --- | --- | --- | --- |
+| Route found | JSON array of legs | empty | 0 |
+| No route, or a well-formed unknown port | `[]` | warning for unknown ports; the search is saved | 0 |
+| Malformed port, invalid criterion, missing or extra input lines, bad command | empty | `{"error":{"code":422 or 400,...}}` | 2 |
+| Import file missing (404) or invalid feed (422) | empty | `{"error":{...}}` | 2 |
+| Internal error | empty | `{"error":{"code":500,...}}` | 1 |
+
+## Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DATABASE_URL` | set in `compose.yml` | PostgreSQL connection |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `freight` / `freight` / `freight_development` | Local defaults; override in a git-ignored `.env` file |
+| `FEED_PATH` | `data/response.json` | Feed imported at container start |
+| `SEED_ON_BOOT` | `true` | `false` skips the startup import (always skipped in tests) |
+
+Imports are serialized with a PostgreSQL advisory lock, so two containers starting together are safe.
 `db/schema.rb` is generated by the first `db:prepare`; commit it after the first run.
 
-## Saved searches and notifications (SLD-0004)
+## Tests
 
-1. A search without an answer (no route, or an unknown port) answers `[]`, exit 0, and is saved
-   (`saved_searches`, deduplicated by origin, destination, criterion while pending).
-2. After a committed import, `ReevaluateSavedSearches` processes pending searches in batches claimed with
-   `FOR UPDATE SKIP LOCKED`, so retries and concurrent runs are safe.
-3. A fulfilled search is marked fulfilled and one row is written to `fulfillment_events`
-   (the outbox, unique per search) with the route.
-4. The user pulls: `notifications list` (`--status`, `--limit`, `--after-id`, `--origin`, `--destination`,
-   `--criterion`; the result has `next_after_id`) and `notifications ack IDS...` or `ack --through ID`.
+- **`bin/docker-test`** runs the RSpec suite in Docker against a separate test database, with SimpleCov
+  coverage in `coverage/`. Domain specs use an in-memory repository; the rest use PostgreSQL. It covers the
+  three challenge scenarios, saved searches fulfilled by a second feed, and two real-thread specs
+  (same-feed imports, row locking).
+- **`bin/test-pack`** replays [test-pack/PLAN.md](test-pack/PLAN.md) end to end through the CLI (feeds, queries,
+  error cases, a snapshot import) and compares the output with the expected results.
+- **CI:** `.github/workflows/ci.yml` builds the image and runs the same suite on every push and pull request,
+  next to the lint and security jobs.
 
-**Trade-offs.** A CLI cannot subscribe, so a pull outbox is the simplest honest mechanism: nothing is lost if
-nobody is listening, and bulk volumes are handled by pagination and bulk ack. Queries and notifications are separate:
-each query answers immediately; client errors are exit codes, not notifications. A **push webhook** is the next step
-(a sender reads the outbox and retries); it needs endpoint registration, signing, retries and dead-lettering, so it is documented, not built.
+## How it is built
 
-## Tests and CI
+```
+bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse input, call a service, print
+                  |
+   services (app/services)   SearchRoutes, ImportFeed, ImportFeedFile, SeedFeed,
+                  |          ReevaluateSavedSearches, NotificationInbox, FeedMerge
+   domain, plain Ruby (app/domain/freight)   Rate, ExchangeRates, RateResolver, Sailing, Route,
+                  |                          RouteSearch, Criteria::{CheapestDirect, Cheapest, Fastest}
+   Freight::SailingRepository  <-- ActiveRecordSailingRepository (app/repositories) -- PostgreSQL
+   MapReduceFeed (app/feeds): the only code that knows the feed's JSON format
+```
 
-`bin/docker-test` runs the full RSpec suite against a separate PostgreSQL database with SimpleCov
-(report in `coverage/`). Domain specs use an in-memory repository; service, persistence and CLI specs use PostgreSQL;
-end-to-end specs cover the three README scenarios and a saved search fulfilled by a second feed; two specs use real
-threads (same-checksum imports, `SKIP LOCKED`). GitHub Actions (`.github/workflows/ci.yml`) builds the image and runs
-the same suite in Docker, next to the existing lint and security jobs.
+- **Criteria are strategies** behind one base class. A new criterion is a new class plus one line in
+  `Freight::Criteria.all`; existing ones are not touched.
+- **Route search** is a depth-first search that asks the repository for one port at a time, so the whole
+  schedule is never loaded. A port is never visited twice (no cycles), dead ends return nothing, and there is no
+  limit on the number of legs. Branches that already cost more (or take longer) than the best route are pruned.
+- **Why Rails:** saved searches need persistence, a central database serves future interfaces and users, and Rails
+  conventions keep the code easy to navigate. The domain does not depend on ActiveRecord: a different store means a
+  different repository adapter.
+- **Left out on purpose:** controllers, a worker service, a plugin system, gem extraction.
+
+## Business rules
+
+- **The JSON is the source of truth.** Exchange rates are EUR-based, so converting USD to EUR **divides** by the rate
+  of the sailing's departure date (exact date, no carry-forward). EUR counts as 1. All math uses `BigDecimal`.
+- **Conflicting rates** for one sailing (MNOP: 456.78 vs 812.00 USD): the **highest in EUR** wins, whatever the order in
+  the file. The discarded rate is recorded.
+- **Unpriced sailings** (no rate, or no exchange rate for the date) are ignored by every criterion and recorded.
+  A conflict containing a rate that cannot be converted also leaves the sailing unpriced.
+- **Precision** is checked by value (JPY 0 decimals, USD and EUR 2, others 2). A rate that rounding would change is
+  rejected and recorded, never rounded.
+- **Connections:** the next departure date must be on or after the previous arrival date. Same-day connections are
+  allowed (the data only has dates, so one may be physically impossible).
+- **Fastest** is first departure to last arrival, layovers included.
+- **Tie-breaks.** Cheapest: total EUR, fewer legs, earlier arrival, sailing codes ascending. Fastest: duration,
+  total EUR, fewer legs, sailing codes ascending.
+- **Bad data is never dropped silently.** Malformed records are rejected, identical duplicates collapse, and a sailing
+  code with different route or dates inside one feed is excluded; all of it is recorded with a reason.
+- **Expected on the sample feed:** cheapest-direct is **ABCD** (about 523.36 EUR); cheapest is **ERXQ + ETRG**
+  (about 322.89 EUR); fastest is **QRST** (17 days, against 22 for ERXQ + ETRG).
 
 ## Scale path
 
-Built: batched upserts, an index on `(origin_port, departure_date)`, per-port expansion, `last_seen_import_id`,
-append-only rates. **Current limit:** the feed is parsed in memory (and stored as raw text), and route search is a
-bounded depth-first search without a leg cap, which can be slow on dense schedules.
-Not built: streaming parser, staging table or `COPY`, parallel reevaluation with a job queue and worker,
+Built: batched upserts, an index on `(origin_port, departure_date)`, per-port expansion, a `last_seen_import_id`
+on sailings, and append-only rates.
+
+Current limits: a feed is parsed in memory (and stored as raw text), imports run in one transaction, and the route
+search has no leg cap, so it can be slow on very dense schedules.
+
+Not built, next steps: a long-running Rails served over HTTP (boot once, many queries; the services are already
+separate from the CLI, so a controller would only call them), streaming parser, staging table or `COPY`, parallel re-checking through a job queue and worker,
 Redis cache for hot routes, webhook delivery, sharding.
 
-## Assumptions
+## Assumptions/Questions
 
-Ports are two letters plus three letters or digits. A port is "known" when an active sailing uses it.
-Rates for conflicting or missing sailings are ignored and recorded. A later snapshot overwrites a sailing's fields.
-A search from a port to itself finds nothing and is saved. Imports may take long on huge feeds (single transaction).
+### Search
 
-## Questions for the PO
+**Assumptions**
+1. A port is "known" when an active sailing uses it. Unknown ports answer `[]` with a warning on stderr and the search is saved.
+2. A search from a port to itself finds nothing and is saved.
+3. Saved searches and notifications are shared by everyone; there are no users.
 
+**Open Questions**
+1. **README vs JSON:** the README shows ERXQ arriving 2022-02-06 (JSON: 2022-02-12), a cheapest-direct example dated 2024 with rate 232.30 that exists nowhere in the data, and the same two legs for `fastest` as for `cheapest` (the JSON gives QRST). We follow the JSON. Which is right?
+2. **Fastest:** first departure to last arrival (layovers count), or the sum of leg durations?
+3. **Connections:** are same-day connections allowed, and is there a minimum layover? We only have dates.
+4. **Unknown ports:** save the search and warn (current), or reject it?
+5. **Currencies without decimals:** should JPY be printed with decimals or as received (current)?
+6. **Maximum legs:** is there a sensible cap, given the cost of an unbounded search?
+7. **Users:** is one shared set of saved searches fine, or should searches and notifications belong to a user?
+
+**Possible improvement: a cache.** Every search reads the database (one query per port visited). Repeated queries could
+be answered from a cache keyed by origin, destination and criterion, which would avoid hitting the database over and
+over. It is not built because the data is small and each CLI call is a separate process, so the cache would have to live
+outside it (PostgreSQL table or Redis). The hard part is consistency when the source of truth changes: the cache must be
+invalidated by every import that changes data, even one that only adds exchange rates or deactivates sailings. A simple
+and safe rule is to store, with each entry, the id of the last completed import it was computed against, and to ignore
+entries from older imports. Without such a rule, a cached answer could outlive the data it came from and show a sailing
+that has been deactivated or a rate that has changed.
+
+### Import
+
+**Assumptions**
+1. Each feed is a full snapshot and is meant to **override** the current view. New and changed sailings are written, and
+   sailings missing from the feed become inactive. A later snapshot overwrites a sailing's fields.
+2. History is kept, not deleted: every import is recorded, rates are appended per import, and inactive sailings stay in
+   the table.
+3. Rates for conflicting or missing sailings are ignored and recorded in `import_issues`.
+
+**Open Questions**
 1. **MNOP:** two rates for one sailing (456.78 and 812.00 USD). We keep the highest; should it be the lowest, the latest, or a hard error?
-2. **README vs JSON:** the README shows ERXQ arriving 2022-02-06 (JSON: 2022-02-12), a cheapest-direct example dated 2024 with rate 232.30 that exists nowhere in the data, and the same two legs for `fastest` as for `cheapest` (the JSON gives QRST). We follow the JSON. Which is right?
-3. **Fastest:** first departure to last arrival (layovers count), or the sum of leg durations?
-4. **Connections:** are same-day connections allowed, and is there a minimum layover? We only have dates.
-5. **Unpriced sailings (Q5):** sailings without a rate or exchange rate are excluded everywhere. Should they be shown or flagged?
-6. **Snapshot or delta feeds:** do feeds replace everything (we deactivate missing sailings) or only add changes?
-7. **Unknown ports:** save the search and warn (current), or reject it?
-8. **Currencies without decimals:** should JPY be printed with decimals or as received (current)?
-9. **Conflicting sailing fields:** a sailing code with different route or dates is excluded. Is that right, or should the latest win?
-10. **Maximum legs:** is there a sensible cap (cost of unbounded search)?
+2. **Snapshot or delta feeds:** do feeds replace everything (we deactivate missing sailings) or only add changes?
+3. **Unpriced sailings:** sailings without a rate or exchange rate are excluded everywhere. Should they be shown or flagged?
+4. **Conflicting sailing fields:** a sailing code with different route or dates is excluded. Is that right, or should the latest win?
+
+**Possible improvement: smarter updates.** Imports are deliberately simple: a feed replaces the current state. If MapReduce
+sends frequent or partial updates, a smarter merge could use versioning, for example a version or timestamp per sailing
+and rate so that older data never overwrites newer data, plus delta feeds that add or remove only what changed. We kept
+it simple for this challenge.
