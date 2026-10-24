@@ -28,7 +28,7 @@ module Freight
       def better(current, candidate)
         return candidate if current.nil?
 
-        sort_key(candidate) < sort_key(current) ? candidate : current
+        (sort_key(candidate) <=> sort_key(current)).negative? ? candidate : current
       end
     end
   end

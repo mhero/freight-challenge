@@ -76,3 +76,17 @@ RSpec.describe Freight::Criteria::Cheapest do
     end
   end
 end
+
+RSpec.describe Freight::Criteria::Base, "#better" do
+  subject(:criterion) { LowestTotalCriterion.new }
+
+  it "keeps the current route unless the candidate has a strictly smaller key" do
+    cheap = build_route(build_sailing(code: "AAAA", from: "CNSHA", to: "NLRTM", departs: "2022-01-01", arrives: "2022-02-01", eur: "10"))
+    pricey = build_route(build_sailing(code: "BBBB", from: "CNSHA", to: "NLRTM", departs: "2022-01-01", arrives: "2022-02-01", eur: "20"))
+
+    expect(criterion.better(nil, pricey)).to eq(pricey)
+    expect(criterion.better(pricey, cheap)).to eq(cheap)
+    expect(criterion.better(cheap, pricey)).to eq(cheap)
+    expect(criterion.better(cheap, cheap)).to eq(cheap)
+  end
+end
