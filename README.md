@@ -9,7 +9,6 @@ The original task is in [docs/CHALLENGE.md](docs/CHALLENGE.md).
 ## Quick start
 
 ```sh
-git clone <repo> && cd freight-challenge     # or unpack the bundle
 printf 'CNSHA\nNLRTM\ncheapest-direct\n' > input.txt
 docker compose run --rm -T app bin/freight < input.txt
 ```
@@ -74,10 +73,7 @@ bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse, call a s
   `departures_from(port, on_or_after:)`, never loading the schedule. No port is visited
   twice (no cycles), dead ends return nothing, and there is no limit on the number of legs.
   Branch-and-bound pruning uses the criterion (cost and duration only grow with more legs).
-- **Why Rails:** saved searches need persistence, a central database serves future
-  interfaces and users, and conventions keep the code easy to navigate. The domain does not
-  depend on ActiveRecord; another store means another repository adapter.
-- **Rejected on purpose:** controllers, a worker service, a plugin system, gem extraction.
+
 
 ## Data policies
 
