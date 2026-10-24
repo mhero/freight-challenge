@@ -1,0 +1,138 @@
+require "rails_helper"
+
+RSpec.describe Freight::RouteSearch do
+  let(:criterion) { LowestTotalCriterion.new }
+  let(:repository) { InMemorySailingRepository.new(sailings) }
+  let(:search) { described_class.new(repository: repository) }
+
+  def sailing(code, from, to, departs, arrives, eur)
+    build_sailing(code: code, from: from, to: to, departs: departs, arrives: arrives, eur: eur)
+  end
+
+  def best(origin = "CNSHA", destination = "NLRTM", with: criterion)
+    search.best_route(origin: origin, destination: destination, criterion: with)
+  end
+
+  context "with a direct and an indirect option" do
+    let(:sailings) do
+      [
+        sailing("DIRC", "CNSHA", "NLRTM", "2022-02-01", "2022-03-01", "500"),
+        sailing("ERXQ", "CNSHA", "ESBCN", "2022-01-29", "2022-02-12", "261.96"),
+        sailing("ETRG", "ESBCN", "NLRTM", "2022-02-16", "2022-02-20", "60.93")
+      ]
+    end
+
+    it "returns every leg of the cheapest route" do
+      expect(best.sailing_codes).to eq(%w[ ERXQ ETRG ])
+      expect(best.total_eur).to eq(BigDecimal("322.89"))
+    end
+
+    it "honours the leg limit of the criterion" do
+      route = best(with: Freight::Criteria::CheapestDirect.new)
+
+      expect(route.sailing_codes).to eq(%w[ DIRC ])
+    end
+  end
+
+  it "returns nil when there is no sailing between the ports" do
+    repository = InMemorySailingRepository.new([ sailing("ABCD", "CNSHA", "ESBCN", "2022-01-29", "2022-02-12", "10") ])
+
+    expect(described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)).to be_nil
+  end
+
+  context "with more than two legs" do
+    let(:sailings) do
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-10", "10"),
+        sailing("BBBB", "ESBCN", "BRSSZ", "2022-01-11", "2022-01-20", "10"),
+        sailing("CCCC", "BRSSZ", "NLRTM", "2022-01-21", "2022-01-30", "10")
+      ]
+    end
+
+    it "chains as many legs as needed" do
+      expect(best.sailing_codes).to eq(%w[ AAAA BBBB CCCC ])
+    end
+  end
+
+  context "when the second leg departs before the first one arrives" do
+    let(:sailings) do
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-10", "10"),
+        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-09", "2022-01-15", "10")
+      ]
+    end
+
+    it "does not connect them" do
+      expect(best).to be_nil
+    end
+  end
+
+  context "when the second leg departs on the arrival day" do
+    let(:sailings) do
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-10", "10"),
+        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-10", "2022-01-15", "10")
+      ]
+    end
+
+    it "allows the same-day connection" do
+      expect(best.sailing_codes).to eq(%w[ AAAA BBBB ])
+    end
+  end
+
+  context "with a dead end" do
+    let(:sailings) do
+      [
+        sailing("ETRB", "ESBCN", "BRSSZ", "2022-02-16", "2022-03-14", "5"),
+        sailing("ERXQ", "CNSHA", "ESBCN", "2022-01-29", "2022-02-12", "20"),
+        sailing("ETRG", "ESBCN", "NLRTM", "2022-02-16", "2022-02-20", "20")
+      ]
+    end
+
+    it "ignores the branch that leads nowhere" do
+      expect(best.sailing_codes).to eq(%w[ ERXQ ETRG ])
+    end
+
+    it "returns nil when only dead ends are reachable" do
+      expect(best("CNSHA", "DEHAM")).to be_nil
+    end
+  end
+
+  context "with cycles in the schedule" do
+    let(:sailings) do
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
+        sailing("BACK", "ESBCN", "CNSHA", "2022-01-03", "2022-01-04", "1"),
+        sailing("BCYC", "ESBCN", "BRSSZ", "2022-01-03", "2022-01-04", "10"),
+        sailing("CYCL", "BRSSZ", "ESBCN", "2022-01-05", "2022-01-06", "1"),
+        sailing("CDST", "BRSSZ", "NLRTM", "2022-01-05", "2022-01-06", "10")
+      ]
+    end
+
+    it "never visits a port twice" do
+      route = best
+
+      ports = route.legs.map(&:origin_port) + [ route.destination_port ]
+      expect(ports).to eq(ports.uniq)
+      expect(route.sailing_codes).to eq(%w[ AAAA BCYC CDST ])
+    end
+
+    it "terminates when the destination is unreachable" do
+      expect(best("CNSHA", "DEHAM")).to be_nil
+    end
+  end
+
+  it "asks the repository for one port at a time and only for reachable ports" do
+    repository = InMemorySailingRepository.new(
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
+        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-03", "2022-01-04", "10"),
+        sailing("ZZZZ", "BRSSZ", "DEHAM", "2022-01-03", "2022-01-04", "10")
+      ]
+    )
+
+    described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+
+    expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ])
+  end
+end
