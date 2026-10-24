@@ -3,7 +3,6 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
 
 jobs:
   scan_ruby:
@@ -50,3 +49,22 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker compose build app
+
+      - name: Start PostgreSQL and wait until it is healthy
+        run: docker compose up -d --wait db
+
+      # The entrypoint runs db:prepare on the test database, then RSpec runs with SimpleCov.
+      - name: Run the RSpec suite in Docker
+        run: bin/docker-test
+
+      - name: Clean up
+        if: always()
+        run: docker compose down -v
