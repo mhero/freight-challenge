@@ -1,0 +1,29 @@
+[
+  {
+    "origin_port": "SGSIN",
+    "destination_port": "AEJEA",
+    "departure_date": "2022-03-01",
+    "arrival_date": "2022-03-06",
+    "sailing_code": "LEG1",
+    "rate": "100.00",
+    "rate_currency": "EUR"
+  },
+  {
+    "origin_port": "AEJEA",
+    "destination_port": "GBLGP",
+    "departure_date": "2022-03-06",
+    "arrival_date": "2022-03-10",
+    "sailing_code": "LEG2",
+    "rate": "110.00",
+    "rate_currency": "USD"
+  },
+  {
+    "origin_port": "GBLGP",
+    "destination_port": "DEHAM",
+    "departure_date": "2022-03-11",
+    "arrival_date": "2022-03-13",
+    "sailing_code": "LEG3",
+    "rate": "50.00",
+    "rate_currency": "EUR"
+  }
+]

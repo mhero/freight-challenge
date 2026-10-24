@@ -1,0 +1,11 @@
+[
+  {
+    "origin_port": "SGSIN",
+    "destination_port": "USNYC",
+    "departure_date": "2022-03-02",
+    "arrival_date": "2022-03-12",
+    "sailing_code": "DEAD",
+    "rate": "50.00",
+    "rate_currency": "EUR"
+  }
+]

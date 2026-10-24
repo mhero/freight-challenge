@@ -1,0 +1,11 @@
+[
+  {
+    "origin_port": "AEJEA",
+    "destination_port": "DEHAM",
+    "departure_date": "2022-03-05",
+    "arrival_date": "2022-03-15",
+    "sailing_code": "JPY1",
+    "rate": "129000.00",
+    "rate_currency": "JPY"
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "origin_port": "SGSIN",
+    "destination_port": "DEHAM",
+    "departure_date": "2022-03-02",
+    "arrival_date": "2022-03-30",
+    "sailing_code": "DIR2",
+    "rate": "900.00",
+    "rate_currency": "EUR"
+  }
+]

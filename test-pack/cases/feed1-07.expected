@@ -1,0 +1,11 @@
+[
+  {
+    "origin_port": "BEANR",
+    "destination_port": "GBLGP",
+    "departure_date": "2022-03-05",
+    "arrival_date": "2022-03-08",
+    "sailing_code": "TIEB",
+    "rate": "200.00",
+    "rate_currency": "EUR"
+  }
+]

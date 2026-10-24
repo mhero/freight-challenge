@@ -1,0 +1,20 @@
+[
+  {
+    "origin_port": "SGSIN",
+    "destination_port": "BEANR",
+    "departure_date": "2022-03-02",
+    "arrival_date": "2022-03-07",
+    "sailing_code": "FST1",
+    "rate": "600.00",
+    "rate_currency": "EUR"
+  },
+  {
+    "origin_port": "BEANR",
+    "destination_port": "DEHAM",
+    "departure_date": "2022-03-08",
+    "arrival_date": "2022-03-09",
+    "sailing_code": "FST2",
+    "rate": "300.00",
+    "rate_currency": "EUR"
+  }
+]

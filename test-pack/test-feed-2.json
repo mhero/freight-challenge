@@ -1,0 +1,385 @@
+{
+  "sailings": [
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-01",
+      "arrival_date": "2022-03-25",
+      "sailing_code": "DIR1"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-02",
+      "arrival_date": "2022-03-28",
+      "sailing_code": "DIR2"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-02",
+      "arrival_date": "2022-03-20",
+      "sailing_code": "DIR3"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-02",
+      "arrival_date": "2022-03-12",
+      "sailing_code": "DIR4"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-20",
+      "arrival_date": "2022-03-26",
+      "sailing_code": "DIR5"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-03",
+      "arrival_date": "2022-03-15",
+      "sailing_code": "DIR6"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "AEJEA",
+      "departure_date": "2022-03-01",
+      "arrival_date": "2022-03-06",
+      "sailing_code": "LEG1"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "GBLGP",
+      "departure_date": "2022-03-06",
+      "arrival_date": "2022-03-10",
+      "sailing_code": "LEG2"
+    },
+    {
+      "origin_port": "GBLGP",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-11",
+      "arrival_date": "2022-03-13",
+      "sailing_code": "LEG3"
+    },
+    {
+      "origin_port": "BEANR",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-08",
+      "arrival_date": "2022-03-09",
+      "sailing_code": "FST2"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "INMAA",
+      "departure_date": "2022-03-01",
+      "arrival_date": "2022-03-10",
+      "sailing_code": "INDA"
+    },
+    {
+      "origin_port": "INMAA",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-09",
+      "arrival_date": "2022-03-12",
+      "sailing_code": "INDB"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "USNYC",
+      "departure_date": "2022-03-02",
+      "arrival_date": "2022-03-12",
+      "sailing_code": "DEAD"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "USNYC",
+      "departure_date": "2022-03-07",
+      "arrival_date": "2022-03-17",
+      "sailing_code": "CONF"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "USNYC",
+      "departure_date": "2022-03-07",
+      "arrival_date": "2022-03-18",
+      "sailing_code": "CONF"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-05",
+      "arrival_date": "2022-03-15",
+      "sailing_code": "JPY1"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-05",
+      "arrival_date": "2022-03-16",
+      "sailing_code": "JPY2"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-05",
+      "arrival_date": "2022-03-14",
+      "sailing_code": "EUR4"
+    },
+    {
+      "origin_port": "BEANR",
+      "destination_port": "GBLGP",
+      "departure_date": "2022-03-05",
+      "arrival_date": "2022-03-08",
+      "sailing_code": "TIEB"
+    },
+    {
+      "origin_port": "BEANR",
+      "destination_port": "GBLGP",
+      "departure_date": "2022-03-04",
+      "arrival_date": "2022-03-08",
+      "sailing_code": "TIEA"
+    },
+    {
+      "origin_port": "BEANR",
+      "destination_port": "GBLGP",
+      "departure_date": "2022-03-05",
+      "arrival_date": "2022-03-09",
+      "sailing_code": "TIEC"
+    },
+    {
+      "origin_port": "GBLGP",
+      "destination_port": "USNYC",
+      "departure_date": "2022-03-08",
+      "arrival_date": "2022-03-18",
+      "sailing_code": "UNCV"
+    },
+    {
+      "origin_port": "AEJEA",
+      "destination_port": "SGSIN",
+      "departure_date": "2022-03-07",
+      "arrival_date": "2022-03-09",
+      "sailing_code": "CYCL"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-13-45",
+      "arrival_date": "2022-03-30",
+      "sailing_code": "BADD"
+    },
+    {
+      "origin_port": "SGSIN",
+      "departure_date": "2022-03-02",
+      "arrival_date": "2022-03-09",
+      "sailing_code": "NODS"
+    },
+    {
+      "origin_port": "SGSIN",
+      "destination_port": "DEHAM",
+      "departure_date": "2022-03-02",
+      "arrival_date": "2022-03-10",
+      "sailing_code": "BRAT"
+    },
+    {
+      "origin_port": "GBLGP",
+      "destination_port": "USNYC",
+      "departure_date": "2022-03-12",
+      "arrival_date": "2022-03-20",
+      "sailing_code": "USN2"
+    }
+  ],
+  "rates": [
+    {
+      "sailing_code": "DIR1",
+      "rate": "950.00",
+      "rate_currency": "USD"
+    },
+    {
+      "sailing_code": "DIR1",
+      "rate": "950.00",
+      "rate_currency": "USD"
+    },
+    {
+      "sailing_code": "DIR2",
+      "rate": "900.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "DIR3",
+      "rate": "500.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "DIR3",
+      "rate": "2000.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "DIR4",
+      "rate": "1500.005",
+      "rate_currency": "USD"
+    },
+    {
+      "sailing_code": "DIR5",
+      "rate": "800.00",
+      "rate_currency": "USD"
+    },
+    {
+      "sailing_code": "LEG1",
+      "rate": "100.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "LEG2",
+      "rate": "110.00",
+      "rate_currency": "USD"
+    },
+    {
+      "sailing_code": "LEG3",
+      "rate": "50.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "FST2",
+      "rate": "300.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "INDA",
+      "rate": "10.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "INDB",
+      "rate": "10.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "DEAD",
+      "rate": "50.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "CONF",
+      "rate": "5.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "JPY1",
+      "rate": "129000.00",
+      "rate_currency": "JPY"
+    },
+    {
+      "sailing_code": "JPY2",
+      "rate": "129000.5",
+      "rate_currency": "JPY"
+    },
+    {
+      "sailing_code": "EUR4",
+      "rate": "1050.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "TIEA",
+      "rate": "200.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "TIEB",
+      "rate": "200.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "TIEC",
+      "rate": "200.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "UNCV",
+      "rate": "100.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "UNCV",
+      "rate": "90.00",
+      "rate_currency": "CHF"
+    },
+    {
+      "sailing_code": "CYCL",
+      "rate": "1.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "BADD",
+      "rate": "10.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "NODS",
+      "rate": "5.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "BRAT",
+      "rate": "abc",
+      "rate_currency": "EUR"
+    },
+    {
+      "rate": "1.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "ZZZZ",
+      "rate": "1.00",
+      "rate_currency": "EUR"
+    },
+    {
+      "sailing_code": "USN2",
+      "rate": "300.00",
+      "rate_currency": "EUR"
+    }
+  ],
+  "exchange_rates": {
+    "2022-03-01": {
+      "usd": 1.05,
+      "jpy": 130.0
+    },
+    "2022-03-02": {
+      "usd": 1.2,
+      "jpy": 131.0
+    },
+    "2022-03-03": {
+      "usd": 1.1,
+      "jpy": 130.0
+    },
+    "2022-03-04": {
+      "usd": 1.1,
+      "jpy": 130.0
+    },
+    "2022-03-05": {
+      "usd": 1.1,
+      "jpy": 129.0
+    },
+    "2022-03-06": {
+      "usd": 1.1,
+      "jpy": 130.0
+    },
+    "2022-03-07": {
+      "usd": 1.1,
+      "jpy": 130.0
+    },
+    "2022-03-08": {
+      "usd": 1.1,
+      "jpy": 130.0
+    },
+    "2022-03-11": {
+      "usd": 1.1,
+      "jpy": 130.0
+    },
+    "2022-03-12": {
+      "usd": 1.1,
+      "jpy": 130.0
+    }
+  }
+}

@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Runs test-pack/PLAN.md against the Docker stack and compares stdout with test-pack/cases/*.expected.
+# WARNING: starts with `docker compose down -v`, which deletes the local database.
+set -uo pipefail
+cd "$(dirname "$0")/.."
+
+PACK="$PWD/test-pack"
+DB_USER="${POSTGRES_USER:-freight}"
+DB_NAME="${POSTGRES_DB:-freight_development}"
+pass=0
+fail=0
+
+freight() {
+  docker compose run --rm -T -v "$PACK:/test-pack:ro" -e FEED_PATH=/test-pack/test-feed-1.json app bin/freight "$@"
+}
+
+sql() {
+  docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -tA -c "$1" | tr -d '[:space:]'
+}
+
+ok()  { echo "PASS  $1"; pass=$((pass + 1)); }
+bad() { echo "FAIL  $1"; fail=$((fail + 1)); }
+
+# check NAME ACTUAL EXPECTED
+check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (got '$2', expected '$3')"; fi; }
+
+# run_case STAGE NUMBER: stdin from cases/STAGE-NN.in, stdout compared with STAGE-NN.expected
+run_case() {
+  local name="$1-$(printf '%02d' "$2")" out code
+  out=$(freight < "$PACK/cases/$name.in" 2>/tmp/test-pack-stderr); code=$?
+  if [ "$code" -eq 0 ] && [ "$out" = "$(cat "$PACK/cases/$name.expected")" ]; then
+    ok "$name $(paste -sd/ "$PACK/cases/$name.in")"
+  else
+    bad "$name exit=$code"
+    diff <(echo "$out") "$PACK/cases/$name.expected" | head -20
+  fi
+}
+
+# error_case NAME STDIN: expects exit 2, empty stdout, JSON error on stderr
+error_case() {
+  local out code
+  out=$(printf "$2" | freight 2>/tmp/test-pack-stderr); code=$?
+  if [ "$code" -eq 2 ] && [ -z "$out" ] && grep -q '^{"error"' /tmp/test-pack-stderr; then ok "$1"; else bad "$1 (exit=$code)"; fi
+}
+
+echo "== 1. clean start (feed 1 is imported by the entrypoint)"
+docker compose down -v >/dev/null 2>&1
+docker compose up -d --wait db >/dev/null 2>&1
+
+echo "== 2. feed 1 queries"
+for n in 1 2 3 4 5 6 7 8 9 10 11 12; do run_case feed1 "$n"; done
+grep -q '"warning"' /tmp/test-pack-stderr && ok "feed1-12 warns about the unknown port" || bad "feed1-12 warning on stderr"
+
+echo "== 3. error cases"
+error_case "malformed port"   'SG1\nDEHAM\ncheapest\n'
+error_case "invalid criterion" 'SGSIN\nDEHAM\nslowest\n'
+error_case "two lines only"    'SGSIN\nDEHAM\n'
+error_case "four lines"        'SGSIN\nDEHAM\ncheapest\nextra\n'
+crlf=$(printf 'sgsin\r\ndeham\r\nfastest\r\n\r\n' | freight 2>/dev/null)
+check "CRLF, lowercase, trailing blank line" "$crlf" "$(cat "$PACK/cases/feed1-03.expected")"
+
+echo "== 4. saved searches do not duplicate"
+for n in 9 10 11 12; do run_case feed1 "$n" >/dev/null; done
+check "pending saved searches" "$(sql "select count(*) from saved_searches where status='pending'")" "4"
+check "distinct saved searches" "$(sql "select count(distinct (origin_port, destination_port, criterion)) from saved_searches")" "4"
+active_before=$(sql "select count(*) from sailings where active")
+
+echo "== 5. import feed 2 (snapshot)"
+out=$(freight import /test-pack/test-feed-2.json 2>/dev/null)
+echo "$out" | grep -q '"skipped": false' && ok "feed 2 imported" || bad "feed 2 import"
+echo "$out" | grep -q '"fulfilled_searches": 1' && ok "one search fulfilled" || bad "fulfilled_searches"
+for n in 1 2 3 4 5; do run_case feed2 "$n"; done
+check "FST1 is inactive, not deleted" "$(sql "select active from sailings where sailing_code='FST1'")" "f"
+events=$(freight notifications list 2>/dev/null)
+check "one fulfillment event" "$(echo "$events" | grep -c '"fulfilled_by_import_id"')" "1"
+echo "$events" | grep -q '"origin_port": "GBLGP"' && ok "event is GBLGP / USNYC / cheapest" || bad "event content"
+check "searches still pending" "$(sql "select count(*) from saved_searches where status='pending'")" "3"
+
+echo "== 6. import feed 2 again"
+out=$(freight import /test-pack/test-feed-2.json 2>/dev/null)
+echo "$out" | grep -q '"skipped": true' && ok "second import skipped" || bad "second import skipped"
+check "still one event" "$(sql "select count(*) from fulfillment_events")" "1"
+check "completed imports" "$(sql "select count(*) from feed_imports where status='completed'")" "2"
+
+echo "== 7. bad structure"
+sailings_before=$(sql "select count(*) from sailings")
+freight import /test-pack/test-feed-bad-structure.json >/dev/null 2>/tmp/test-pack-stderr; code=$?
+check "import exits with 2" "$code" "2"
+grep -q '"code":422' /tmp/test-pack-stderr && ok "422 error on stderr" || bad "422 error on stderr"
+check "failed import recorded" "$(sql "select count(*) from feed_imports where status='failed'")" "1"
+check "data unchanged" "$(sql "select count(*) from sailings")" "$sailings_before"
+
+echo
+echo "Feed 1 import issues (check the reasons against PLAN.md):"
+docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -c \
+  "select kind, reference, reason from import_issues where feed_import_id = (select min(id) from feed_imports) order by kind, reference"
+
+echo "Passed: $pass  Failed: $fail"
+[ "$fail" -eq 0 ]
