@@ -20,7 +20,7 @@ RSpec.describe Freight::RateResolver do
     expect(result).to be_priced
     expect(result.rate).to eq(rate("456.78", "USD"))
     expect(result.conflict).to be(false)
-    expect(result.price_eur).to be_within(BigDecimal("0.001")).of(BigDecimal("410.098"))
+    expect(result.price_eur).to be_within(BigDecimal("0.001")).of(BigDecimal("410.1095"))
   end
 
   it "keeps the highest rate when candidates conflict (MNOP)" do

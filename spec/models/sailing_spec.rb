@@ -21,7 +21,7 @@ RSpec.describe Sailing do
     it "filters by origin port" do
       create(:sailing, origin_port: "ESBCN").tap { |other| create(:rate, sailing: other) }
 
-      expect(described_class.priced_departures("ESBCN").count).to eq(1)
+      expect(described_class.priced_departures("ESBCN").to_a.size).to eq(1)
     end
 
     it "keeps only departures on or after the given date" do

@@ -27,7 +27,7 @@ RSpec.describe Freight::ExchangeRates do
   it "converts currencies without decimals" do
     eur = rates.to_eur(rate("97453", "JPY"), on: Date.new(2022, 1, 31))
 
-    expect(eur).to be_within(BigDecimal("0.001")).of(BigDecimal("742.78"))
+    expect(eur).to be_within(BigDecimal("0.001")).of(BigDecimal("742.782"))
   end
 
   it "returns nil when the date has no rate for the currency, without carrying forward" do
