@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+# Freight CLI: see FreightCli::Runner. Reads stdin, writes the result to stdout.
+require_relative "../config/environment"
+
+exit FreightCli::Runner.new(argv: ARGV, stdin: $stdin, stdout: $stdout, stderr: $stderr).call

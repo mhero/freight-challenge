@@ -63,4 +63,4 @@ COPY --chown=rails:rails --from=build /rails /rails
 # Entrypoint waits for PostgreSQL and prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
-CMD ["bin/rails", "about"]
+CMD ["bin/freight"]

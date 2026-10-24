@@ -40,6 +40,10 @@ module Freight
       legs.map(&:code)
     end
 
+    def to_legs
+      legs.map(&:to_leg)
+    end
+
     def extend_with(sailing)
       self.class.new(legs + [ sailing ])
     end
