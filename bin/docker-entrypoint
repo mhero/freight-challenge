@@ -18,4 +18,10 @@ fi
 
 ./bin/rails db:prepare >&2
 
+# Cold start: import the bundled feed (FEED_PATH to override) before any command runs,
+# so a search never sees an empty database. Skipped for tests.
+if [ "${SEED_ON_BOOT:-true}" = "true" ] && [ "${RAILS_ENV:-}" != "test" ]; then
+  ./bin/rails freight:seed >&2
+fi
+
 exec "${@}"

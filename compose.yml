@@ -24,6 +24,7 @@ services:
       RAILS_ENV: development
       DATABASE_URL: postgres://${POSTGRES_USER:-freight}:${POSTGRES_PASSWORD:-freight}@db:5432/${POSTGRES_DB:-freight_development}
       SKIP_TEST_DATABASE: "true"
+      FEED_PATH: ${FEED_PATH:-}
     stdin_open: true
 
 volumes:

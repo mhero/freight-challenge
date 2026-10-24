@@ -4,5 +4,6 @@ set -euo pipefail
 
 exec docker compose run --rm -T \
   -e RAILS_ENV=test \
+  -e SEED_ON_BOOT=false \
   -e DATABASE_URL="postgres://${POSTGRES_USER:-freight}:${POSTGRES_PASSWORD:-freight}@db:5432/freight_test" \
   app bundle exec rspec "$@"
