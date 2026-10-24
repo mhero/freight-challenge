@@ -6,7 +6,7 @@ class ImportFeedFile
     new(path, **options).call
   end
 
-  def initialize(path, reevaluator: nil)
+  def initialize(path, reevaluator: ReevaluateSavedSearches)
     @path = path.to_s
     @reevaluator = reevaluator
   end

@@ -7,7 +7,7 @@ class SeedFeed
     new(**options).call
   end
 
-  def initialize(env: ENV, reevaluator: nil)
+  def initialize(env: ENV, reevaluator: ReevaluateSavedSearches)
     @env = env
     @reevaluator = reevaluator
   end

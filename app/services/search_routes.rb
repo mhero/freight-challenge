@@ -1,7 +1,7 @@
 # Finds the best route for a query. Ports are normalized and validated here so
 # every interface (CLI today, others later) applies the same rules.
 class SearchRoutes
-  Result = Data.define(:route, :warnings)
+  Result = Data.define(:route, :warnings, :saved_search)
 
   def self.call(...)
     new.call(...)
@@ -18,7 +18,10 @@ class SearchRoutes
 
     route = Freight::RouteSearch.new(repository: @repository)
                                 .best_route(origin: origin, destination: destination, criterion: criterion)
-    Result.new(route: route, warnings: route ? [] : unknown_port_warnings(origin, destination))
+    return Result.new(route: route, warnings: [], saved_search: nil) if route
+
+    saved = SavedSearch.record_unfulfilled!(origin: origin, destination: destination, criterion: criterion.name)
+    Result.new(route: nil, warnings: unknown_port_warnings(origin, destination), saved_search: saved)
   end
 
   private

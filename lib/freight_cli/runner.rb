@@ -10,6 +10,9 @@ module FreightCli
       Usage:
         bin/freight < input.txt     origin port, destination port, criterion (one per line)
         bin/freight import FILE     import a MapReduce feed
+        bin/freight notifications list [--status unacknowledged|acknowledged|all] [--limit N]
+                                       [--after-id ID] [--origin P] [--destination P] [--criterion C]
+        bin/freight notifications ack ID [ID...] | --through ID
       Criteria: cheapest-direct, cheapest, fastest
     TEXT
 
@@ -25,7 +28,7 @@ module FreightCli
       build_command(command).call(args)
     rescue ClientError => e
       fail_with(e.status, e.message, exit_code: 2)
-    rescue Freight::InvalidPort, Freight::UnknownCriterion, InvalidFeed => e
+    rescue Freight::InvalidPort, Freight::UnknownCriterion, InvalidFeed, NotificationInbox::InvalidQuery => e
       fail_with(422, e.message, exit_code: 2)
     rescue ImportFeedFile::FileMissing => e
       fail_with(404, e.message, exit_code: 2)
@@ -39,6 +42,7 @@ module FreightCli
       case name
       when nil, "search" then SearchCommand.new(io: @io)
       when "import" then ImportCommand.new(io: @io)
+      when "notifications" then NotificationsCommand.new(io: @io)
       else raise UsageError, "unknown command #{name.inspect}, try --help"
       end
     end

@@ -16,7 +16,7 @@ class ImportFeed
     new(...).call
   end
 
-  def initialize(payload, source:, reevaluator: nil)
+  def initialize(payload, source:, reevaluator: ReevaluateSavedSearches)
     @payload = payload
     @source = source
     @reevaluator = reevaluator

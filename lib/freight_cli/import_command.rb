@@ -8,7 +8,7 @@ module FreightCli
     def call(args)
       raise UsageError, "usage: import FILE" unless args.size == 1
 
-      result = ImportFeedFile.call(args.first, reevaluator: nil)
+      result = ImportFeedFile.call(args.first)
       feed_import = result.feed_import
       @io.stdout.puts(
         JSON.pretty_generate(
