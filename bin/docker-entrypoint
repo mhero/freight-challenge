@@ -1,8 +1,21 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
-if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
-  ./bin/rails db:prepare
+# Wait for PostgreSQL, prepare the schema (idempotent), then hand over.
+# Everything here logs to stderr so stdout stays clean for the CLI.
+
+if [ -n "$DATABASE_URL" ]; then
+  tries=0
+  until pg_isready -q -d "$DATABASE_URL"; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 60 ]; then
+      echo "PostgreSQL is not reachable at DATABASE_URL" >&2
+      exit 1
+    fi
+    echo "Waiting for PostgreSQL..." >&2
+    sleep 1
+  done
 fi
+
+./bin/rails db:prepare >&2
 
 exec "${@}"

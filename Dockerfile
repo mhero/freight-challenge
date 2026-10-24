@@ -1,11 +1,8 @@
 # syntax=docker/dockerfile:1
 # check=error=true
 
-# This Dockerfile is designed for production, not development. Use with Kamal or build'n'run by hand:
-# docker build -t freight_challenge .
-# docker run -d -p 80:80 -e RAILS_MASTER_KEY=<value from config/master.key> --name freight_challenge freight_challenge
-
-# For a containerized dev environment, see Dev Containers: https://guides.rubyonrails.org/getting_started_with_devcontainer.html
+# One image for the CLI and the test suite. Use it through compose.yml:
+#   docker compose run --rm -T app bin/freight < input.txt
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version
 ARG RUBY_VERSION=3.4.11
@@ -20,11 +17,10 @@ RUN apt-get update -qq && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# Set production environment variables and enable jemalloc for reduced memory usage and latency.
-ENV RAILS_ENV="production" \
-    BUNDLE_DEPLOYMENT="1" \
+# All gem groups are installed because the same image runs the RSpec suite.
+# RAILS_ENV is overridden per command (compose.yml, bin/docker-test).
+ENV RAILS_ENV="development" \
     BUNDLE_PATH="/usr/local/bundle" \
-    BUNDLE_WITHOUT="development" \
     LD_PRELOAD="/usr/local/lib/libjemalloc.so"
 
 # Throw-away build stage to reduce size of final image
@@ -49,10 +45,8 @@ COPY . .
 
 # Precompile bootsnap code for faster boot times.
 # -j 1 disable parallel compilation to avoid a QEMU bug: https://github.com/rails/bootsnap/issues/495
-RUN bundle exec bootsnap precompile -j 1 app/ lib/
-
-
-
+RUN bundle exec bootsnap precompile -j 1 app/ lib/ && \
+    mkdir -p log tmp coverage
 
 # Final stage for app image
 FROM base
@@ -66,9 +60,7 @@ USER 1000:1000
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 COPY --chown=rails:rails --from=build /rails /rails
 
-# Entrypoint prepares the database.
+# Entrypoint waits for PostgreSQL and prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
-# Start server via Thruster by default, this can be overwritten at runtime
-EXPOSE 80
-CMD ["./bin/thrust", "./bin/rails", "server"]
+CMD ["bin/rails", "about"]

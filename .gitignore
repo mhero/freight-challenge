@@ -31,3 +31,7 @@
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+
+# macOS and coverage output
+.DS_Store
+/coverage

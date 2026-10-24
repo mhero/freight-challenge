@@ -43,3 +43,7 @@
 # Ignore Docker-related files
 /.dockerignore
 /Dockerfile*
+
+# Coverage output and macOS files
+/coverage
+.DS_Store

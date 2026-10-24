@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Runs the full RSpec suite in Docker against a separate test database.
+set -euo pipefail
+
+exec docker compose run --rm -T \
+  -e RAILS_ENV=test \
+  -e DATABASE_URL="postgres://${POSTGRES_USER:-freight}:${POSTGRES_PASSWORD:-freight}@db:5432/freight_test" \
+  app bundle exec rspec "$@"
