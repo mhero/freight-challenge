@@ -59,7 +59,6 @@ RSpec.describe ImportFeed do
       expect(Rate.count).to eq(9)
       expect(ImportIssue.count).to eq(1)
     end
-
   end
 
   describe "batching" do

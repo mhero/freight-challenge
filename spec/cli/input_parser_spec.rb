@@ -10,7 +10,7 @@ RSpec.describe FreightCli::InputParser do
   end
 
   it "ignores CRLF, surrounding whitespace, a missing final newline and trailing blank lines" do
-    ["CNSHA\r\nNLRTM\r\nfastest\r\n", "  CNSHA \n NLRTM\n fastest  ", "CNSHA\nNLRTM\nfastest\n\n \n\n"].each do |text|
+    [ "CNSHA\r\nNLRTM\r\nfastest\r\n", "  CNSHA \n NLRTM\n fastest  ", "CNSHA\nNLRTM\nfastest\n\n \n\n" ].each do |text|
       expect(parse(text)).to have_attributes(origin: "CNSHA", destination: "NLRTM", criterion: "fastest")
     end
   end
