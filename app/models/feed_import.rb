@@ -4,7 +4,7 @@ class FeedImport < ApplicationRecord
 
   has_many :import_issues
 
-  validates :source, :checksum, :raw_payload, :started_at, presence: true
+  validates :source, :checksum, :started_at, presence: true
   validates :status, inclusion: { in: STATUSES }
 
   scope :completed, -> { where(status: "completed") }
