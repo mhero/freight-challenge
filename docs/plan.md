@@ -28,7 +28,7 @@ Rails is the application and persistence layer, PostgreSQL the shared database. 
 
 - **Domain (plain Ruby, no ActiveRecord):** money, exchange rates, sailings, routes, route search, pricing. Testable without a database.
 - **Criteria as strategies:** `cheapest-direct`, `cheapest`, `fastest` behind one interface. A new criterion must not require modifying existing ones.
-- **Repository boundary:** the domain depends on a small interface (for example `departures_from(port, on_or_after:)` returning priced sailings). ActiveRecord implements it. The database is configured via `DATABASE_URL`. Another store means writing another adapter. Do not build a plugin system.
+- **Repository boundary and data access (important):** a search must use a **constant number of database queries, independent of path length and of the number of ports visited**. Never query per port or per leg. The domain depends on a small interface, `reachable_from(origin)`, that returns every active, priced sailing reachable from the origin through time-feasible connections (next departure date >= previous arrival date), plus the exchange rates needed to compare them. ActiveRecord implements it with **one recursive CTE** (`WITH RECURSIVE ... UNION`, which deduplicates sailings so cycles terminate) and **one query** for the exchange rates of the dates involved: **at most 2 queries per search**. SQL decides which sailings are priced (an effective rate row exists and, for non-EUR currencies, an exchange rate exists for the departure date). All arithmetic stays in Ruby with BigDecimal, so currency conversion lives in one place. The route search then runs Dijkstra in memory over the loaded sailings (indexed by origin port, sorted by departure date). An in-memory repository implements the same interface for domain unit tests. `known_port?` checks both ports in one query and runs only for unfulfilled searches. The database is configured via `DATABASE_URL`. Another store means writing another adapter. Do not build a plugin system.
 - **Application services:** `ImportFeed`, `SearchRoutes`, `ReevaluateSavedSearches`.
 - **Feed adapter:** isolates the MapReduce JSON format from the domain.
 - **CLI:** parses input, calls a service, prints the result. No business logic.
@@ -39,7 +39,7 @@ No controllers or HTTP endpoints unless required. No gem extraction.
 
 Docker is the only host dependency.
 
-- Compose services: **PostgreSQL** (official image, named volume, health check, not exposed) and **app**. No worker service.
+- Compose services: **PostgreSQL** (official image, named volume, health check, not exposed) and **app**. No worker service, no Redis, no cache.
 - One image. Credentials and config come from environment variables. No committed secrets.
 - **Migrations are part of the container startup.** The entrypoint waits for Postgres health, runs `db:prepare` (idempotent), then runs the seed import, then hands over to the command. No manual migration step on the host.
 - **Cold start:** the bundled `response.json` is imported synchronously by the entrypoint, idempotent by checksum. The seed file path is configurable (env var such as `FEED_PATH`, default: the bundled file), so a reviewer can swap in their own feed, including a larger one, without code changes. `bin/freight import FILE` must also work inside the container. The import is safe if two containers start together (advisory lock or unique constraint). The CLI must never run against an empty database because a seed was pending, or a valid search would wrongly be saved as unfulfilled.
@@ -88,13 +88,14 @@ Input on stdin, one per line: origin port, destination port, criterion. Output o
 - Normalize ports (trim, uppercase) and validate `[A-Z]{2}[A-Z0-9]{3}`.
 - **Malformed port, invalid criterion, missing or extra input lines:** JSON error on stderr with an HTTP-style code, exit **2**.
 - **Well-formed but unknown port, or no route:** print `[]`, exit **0**, save the search. Print a warning on stderr for unknown ports so typos do not pass silently.
-- **Internal error:** JSON error on stderr, exit **1**.
+- **Internal error, including a search statement timeout (resource limit):** JSON error on stderr, exit **1**. No route is printed.
 - Other commands: `import FILE`, `notifications list`, `notifications ack`.
 
 ## 7. Saved searches and fulfillment (SLD-0004)
 
 - An unfulfilled search is persisted, deduplicated by origin, destination and criterion.
 - After a committed import, `ReevaluateSavedSearches` processes pending searches in batches, claiming rows with `FOR UPDATE SKIP LOCKED`. It is safe under retries and concurrent runs.
+- **Group pending searches by origin:** one `reachable_from` load per distinct origin, then run each (destination, criterion) search in memory over the same loaded data. Never one load per saved search.
 - A newly fulfillable search is marked fulfilled and a **fulfillment event** is written to an outbox table. A unique constraint guarantees one event per search.
 - **Pull model:** `notifications list` (paginated, filterable) and `notifications ack` (several ids, or all up to an id). A CLI cannot subscribe, so the outbox is the mechanism.
 - Bulk case: queries and notifications are separate. Each query answers immediately. Fulfillments arrive later and can be many, hence pagination and bulk ack. Client errors are per-query exit codes, not notifications.
@@ -104,12 +105,20 @@ Input on stdin, one per line: origin port, destination port, criterion. Output o
 
 Build the cheap parts:
 
+- **Constant queries per search** (section 2) and **one load per origin** during reevaluation (section 7).
 - Batched upserts, never row-by-row inserts.
-- Index on `(origin_port, departure_date)`.
-- Route search expands per port on demand through the repository. It never loads all sailings into memory.
+- A partial index on active sailings, `(origin_port, departure_date, sailing_code)`, to support the recursive step.
 - `last_seen_import_id` and append-only rates (section 4).
+- **Statement timeout** on search queries (configurable). If it fires, fail with an explicit resource-limit error (JSON on stderr, exit 1). Never return a partial or best-so-far route as if it were optimal.
+- **Benchmark script** `bin/benchmark`: generates a synthetic graph (configurable ports and sailings) and reports, per size: load time, search latency (p50 and max over a fixed set of queries), SQL query count per search, and peak memory if measurable. Run it at 10k, 100k and 1M sailings and put the real numbers in the README, with the gap to the 10M target stated plainly. Do not claim scale beyond what was measured.
 
-Document, but do not build, in a short "Scale path" README section: streaming parser, staging table or `COPY`, parallel reevaluation through a job queue and worker, Redis caching of hot routes, webhook delivery, sharding. State the current limit plainly (the feed is parsed in memory).
+**Results are exact.** The search is globally optimal. No cap on legs, no search horizon, no "bounded" mode, no best-so-far answers.
+
+**Search design:** best-first search over **sailings**, not ports (a node is a sailing). Per-port labels would be wrong, because connections are time-dependent and a cheap but late arrival at a port can lose to a costlier but earlier one. A sailing fixes its own arrival date, so routes ending in the same sailing differ only in accumulated cost (or elapsed time), and the sort key must grow with each added leg and keep its order when the same legs are appended. State this argument in a code comment and prove it with the brute-force equivalence spec (section 9). Do not replace it with per-port Dijkstra.
+
+**Do not build** a cache, a job queue, a worker, or Redis. Document them in a short "Scale path" README section, together with: a search horizon (as an opt-in, explicitly non-global mode), a frontier or database-assisted search for subgraphs too large for memory, a precomputed reachability table per port pair, a streaming parser, a staging table or `COPY`, parallel reevaluation, webhook delivery, and sharding. If a cache is ever added, its key must include origin, destination, criterion and the data version, and an import must invalidate it.
+
+State the current limits plainly: the feed is parsed in memory, and a search loads the whole reachable subgraph of its origin, so memory grows with it. Report where the benchmark shows this becoming a problem.
 
 ## 9. Testing
 
@@ -120,7 +129,9 @@ RSpec is mandatory, run through Docker, with PostgreSQL for anything database-de
 - CLI: stdin and stdout, stderr, exit codes.
 - End to end: the three README scenarios on the sample data (with the JSON as source of truth), plus an unfulfilled search fulfilled by a second feed.
 - Explicit cases: MNOP conflict, unconvertible conflict, missing exchange rate and missing rate (fabricated data), precision rejection, JPY output string, departure-date conversion, more than two legs, dead end (ETRB), cycle, same-day connection (fabricated), time-infeasible connection, ties, inactive sailings after a snapshot import, import idempotency, invalid feed.
-- One concurrency test: two imports of the same checksum create no duplicates.
+- Concurrency, two tests only: (1) two imports of the same checksum create no duplicates; (2) several simultaneous searches run while an import commits, and each returns a result consistent with either the old or the new data, never a mix, with no errors.
+- **Query budget spec:** count SQL queries (`sql.active_record`) during one search over a chain of seven single-sailing hops (A to H) and assert at most 2. A shorter chain must give the same count. Also assert that reevaluation runs one load per distinct origin, not per saved search.
+- **Equivalence spec:** compare the route search against a brute-force reference (exhaustive enumeration of simple paths) on small randomized graphs, for all three criteria.
 - Deterministic, isolated, no live services. Run the full suite before delivering.
 
 ## 10. CI
@@ -145,7 +156,7 @@ Specs are committed with the code they cover. Only commits that deliver a README
 2. Docker, Compose, entrypoint with `db:prepare`, RSpec and SimpleCov baseline.
 3. Domain: money, exchange rates, sailing, rate resolution.
 4. `PLS-0001:` Cheapest-direct strategy.
-5. Route search with time-feasible connections.
+5. Route search with time-feasible connections over the in-memory graph loaded by `reachable_from` (recursive CTE, at most 2 queries).
 6. `WRT-0002:` Cheapest strategy. `TST-0003:` Fastest strategy (separate commits).
 7. Migrations, models, constraints, repository.
 8. `ImportFeed`: validation, checksum, batching, versioning, inactive marking.
