@@ -137,6 +137,39 @@ RSpec.describe Freight::RouteSearch do
     expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ])
   end
 
+  it "loads a port again, from the earlier date, when a later-popped route reaches it sooner" do
+    repository = InMemorySailingRepository.new(
+      [
+        sailing("SLOW", "CNSHA", "ESBCN", "2022-01-01", "2022-01-20", "10"),
+        sailing("FAST", "CNSHA", "ESBCN", "2022-01-01", "2022-01-05", "20"),
+        sailing("ONWD", "ESBCN", "NLRTM", "2022-01-10", "2022-01-12", "10")
+      ]
+    )
+
+    route = described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+
+    expect(route.sailing_codes).to eq(%w[ FAST ONWD ])
+    expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ESBCN ])
+  end
+
+  it "queues only the best route to each sailing" do
+    repository = InMemorySailingRepository.new(
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
+        sailing("AAAB", "CNSHA", "ESBCN", "2022-01-01", "2022-01-03", "20"),
+        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-05", "2022-01-06", "10")
+      ]
+    )
+    queue = Freight::MinHeap.new
+    allow(Freight::MinHeap).to receive(:new).and_return(queue)
+    pushed = []
+    allow(queue).to receive(:push).and_wrap_original { |original, key, route| pushed << route.sailing_codes; original.call(key, route) }
+
+    described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+
+    expect(pushed.count(%w[ AAAB BBBB ])).to eq(0)
+  end
+
   it "finds nothing when origin and destination are the same port" do
     repository = InMemorySailingRepository.new([ sailing("AAAA", "CNSHA", "NLRTM", "2022-01-01", "2022-01-02", "10") ])
 

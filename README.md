@@ -183,9 +183,10 @@ bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse input, ca
 
 - **Criteria are strategies** behind one base class. A new criterion is a new class plus one line in
   `Freight::Criteria.all`; existing ones are not touched.
-- **Route search** is a depth-first search that asks the repository for one port at a time, so the whole
-  schedule is never loaded. A port is never visited twice (no cycles), dead ends return nothing, and there is no
-  limit on the number of legs. Branches that already cost more (or take longer) than the best route are pruned.
+- **Route search** is a Dijkstra search over sailings that asks the repository for one port at a time, so the whole
+  schedule is never loaded. Each port is read from the earliest arrival date seen (the date filter runs in SQL, on a
+  partial index of active sailings), a port is read again only when a route reaches it sooner, and a route is queued
+  only if it beats the best one already queued for its last sailing. There is no limit on the number of legs.
 - **Why Rails:** saved searches need persistence, a central database serves future interfaces and users, and Rails
   conventions keep the code easy to navigate. The domain does not depend on ActiveRecord: a different store means a
   different repository adapter.
@@ -213,11 +214,13 @@ bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse input, ca
 
 ## Scale path
 
-Built: batched upserts, an index on `(origin_port, departure_date)`, per-port expansion, a `last_seen_import_id`
+Built: batched upserts, a partial index on active sailings `(origin_port, departure_date, sailing_code)`, per-port expansion read from the arrival date in SQL, one queue entry per improvement, a `last_seen_import_id`
 on sailings, and append-only rates.
 
-Current limits: a feed is parsed in memory (and stored as raw text), imports run in one transaction, and the route
-search has no leg cap, so it can be slow on very dense schedules.
+Current limits: a feed is parsed in memory (and stored as raw text), imports run in one transaction, every loaded
+sailing is converted to EUR in Ruby on each search (storing the EUR price at import would remove this, but it must be
+recomputed whenever exchange rates change), and the route search has no leg cap, so it can be slow on very dense
+schedules.
 
 Not built, next steps: a long-running Rails served over HTTP (boot once, many queries; the services are already
 separate from the CLI, so a controller would only call them), streaming parser, staging table or `COPY`, parallel re-checking through a job queue and worker,
