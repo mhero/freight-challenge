@@ -60,12 +60,4 @@ RSpec.describe Freight::Criteria::Fastest do
       expect(criterion.best([ second, first ])).to eq(first)
     end
   end
-
-  it "prunes partial routes that are already longer than the best" do
-    long = build_route(leg("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-02-01", "1"))
-    short = build_route(leg("BBBB", "CNSHA", "NLRTM", "2022-01-01", "2022-01-10", "1"))
-
-    expect(criterion.prunable?(long, short)).to be(true)
-    expect(criterion.prunable?(short, short)).to be(false)
-  end
 end

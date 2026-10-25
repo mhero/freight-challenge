@@ -8,8 +8,4 @@ class LowestTotalCriterion < Freight::Criteria::Base
   def sort_key(route)
     [ route.total_eur, route.leg_count, route.sailing_codes ]
   end
-
-  def prunable?(partial, best)
-    partial.total_eur > best.total_eur
-  end
 end

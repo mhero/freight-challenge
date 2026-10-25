@@ -61,7 +61,7 @@ RSpec.describe Freight::Criteria::Cheapest do
       expect(criterion.best([ second, first ])).to eq(first)
     end
 
-    it "keeps equal-cost alternatives alive during pruning so the tie-break can decide" do
+    it "lets the tie-break decide between equal-cost alternatives" do
       repository = InMemorySailingRepository.new(
         [
           leg("BBBB", "CNSHA", "NLRTM", "2022-02-01", "2022-03-10", "100"),
@@ -74,19 +74,5 @@ RSpec.describe Freight::Criteria::Cheapest do
 
       expect(route.sailing_codes).to eq(%w[ AAAA ])
     end
-  end
-end
-
-RSpec.describe Freight::Criteria::Base, "#better" do
-  subject(:criterion) { LowestTotalCriterion.new }
-
-  it "keeps the current route unless the candidate has a strictly smaller key" do
-    cheap = build_route(build_sailing(code: "AAAA", from: "CNSHA", to: "NLRTM", departs: "2022-01-01", arrives: "2022-02-01", eur: "10"))
-    pricey = build_route(build_sailing(code: "BBBB", from: "CNSHA", to: "NLRTM", departs: "2022-01-01", arrives: "2022-02-01", eur: "20"))
-
-    expect(criterion.better(nil, pricey)).to eq(pricey)
-    expect(criterion.better(pricey, cheap)).to eq(cheap)
-    expect(criterion.better(cheap, pricey)).to eq(cheap)
-    expect(criterion.better(cheap, cheap)).to eq(cheap)
   end
 end

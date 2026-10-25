@@ -29,11 +29,6 @@ RSpec.describe Freight::Criteria::CheapestDirect do
   it "returns nil when there is no route" do
     expect(criterion.best([])).to be_nil
   end
-
-  it "prunes partial routes that already cost more than the best" do
-    expect(criterion.prunable?(direct("X", "200"), direct("Y", "100"))).to be(true)
-    expect(criterion.prunable?(direct("X", "100"), direct("Y", "100"))).to be(false)
-  end
 end
 
 RSpec.describe Freight::Criteria::CheapestDirect, "on the sample schedule" do

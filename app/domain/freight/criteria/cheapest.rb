@@ -10,11 +10,6 @@ module Freight
       def sort_key(route)
         [ route.total_eur, route.leg_count, route.arrival_date, route.sailing_codes ]
       end
-
-      # Prices never decrease when a leg is added, so a costlier partial route can be dropped.
-      def prunable?(partial, best)
-        partial.total_eur > best.total_eur
-      end
     end
   end
 end

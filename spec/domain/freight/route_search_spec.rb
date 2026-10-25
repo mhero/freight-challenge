@@ -122,6 +122,27 @@ RSpec.describe Freight::RouteSearch do
     end
   end
 
+  it "loads the departures of each port once per search, however often the port is reached" do
+    repository = InMemorySailingRepository.new(
+      [
+        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
+        sailing("AAAB", "CNSHA", "ESBCN", "2022-01-01", "2022-01-03", "20"),
+        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-05", "2022-01-06", "10")
+      ]
+    )
+
+    route = described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+
+    expect(route.sailing_codes).to eq(%w[ AAAA BBBB ])
+    expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ])
+  end
+
+  it "finds nothing when origin and destination are the same port" do
+    repository = InMemorySailingRepository.new([ sailing("AAAA", "CNSHA", "NLRTM", "2022-01-01", "2022-01-02", "10") ])
+
+    expect(described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "CNSHA", criterion: criterion)).to be_nil
+  end
+
   it "asks the repository for one port at a time and only for reachable ports" do
     repository = InMemorySailingRepository.new(
       [
