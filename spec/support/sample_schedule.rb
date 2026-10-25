@@ -36,8 +36,8 @@ module SampleSchedule
     end
   end
 
-  def sample_repository
-    InMemorySailingRepository.new(sample_sailings)
+  def sample_search
+    Freight::RouteSearch.new(sample_sailings)
   end
 end
 

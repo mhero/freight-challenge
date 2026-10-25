@@ -33,8 +33,7 @@ end
 
 RSpec.describe Freight::Criteria::CheapestDirect, "on the sample schedule" do
   it "returns ABCD, the cheapest direct sailing (MNOP uses its highest rate)" do
-    route = Freight::RouteSearch.new(repository: sample_repository)
-                                .best_route(origin: "CNSHA", destination: "NLRTM", criterion: described_class.new)
+    route = sample_search.best_route(origin: "CNSHA", destination: "NLRTM", criterion: described_class.new)
 
     expect(route.sailing_codes).to eq(%w[ ABCD ])
     expect(route.total_eur).to be_within(BigDecimal("0.01")).of(BigDecimal("523.36"))

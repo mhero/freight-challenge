@@ -1,5 +1,8 @@
 # Finds the best route for a query. Ports are normalized and validated here so
 # every interface (CLI today, others later) applies the same rules.
+#
+# One load per search: the repository returns the sailings reachable from the origin (at most two
+# queries) and the search runs in memory over them.
 class SearchRoutes
   Result = Data.define(:route, :warnings, :saved_search)
 
@@ -16,7 +19,7 @@ class SearchRoutes
     destination = valid_port(destination, "destination")
     criterion = Freight::Criteria.fetch(criterion.to_s.strip.downcase)
 
-    route = Freight::RouteSearch.new(repository: @repository)
+    route = Freight::RouteSearch.new(@repository.reachable_from(origin))
                                 .best_route(origin: origin, destination: destination, criterion: criterion)
     return Result.new(route: route, warnings: [], saved_search: nil) if route
 
@@ -33,7 +36,9 @@ class SearchRoutes
     code
   end
 
+  # Only for unfulfilled searches: one query checks both ports.
   def unknown_port_warnings(*ports)
-    ports.uniq.reject { |port| @repository.known_port?(port) }.map { |port| "unknown port #{port}" }
+    ports = ports.uniq
+    (ports - @repository.known_ports(ports)).map { |port| "unknown port #{port}" }
   end
 end

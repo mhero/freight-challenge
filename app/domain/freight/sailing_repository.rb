@@ -2,14 +2,15 @@ module Freight
   # What the domain needs from storage. Adapters (ActiveRecord, in-memory)
   # include this module and return priced Freight::Sailing objects only.
   module SailingRepository
-    # Active, priced sailings leaving `port`, departing on or after the given date
-    # (any date when nil), ordered by departure date then sailing code.
-    def departures_from(_port, on_or_after: nil)
+    # Every active, priced sailing reachable from `origin` through time-feasible connections
+    # (next departure date >= previous arrival date), with its EUR price for comparison.
+    # Implementations must use a constant number of queries, whatever the path length.
+    def reachable_from(_origin)
       raise NotImplementedError
     end
 
-    # True when the port appears in any active sailing.
-    def known_port?(_code)
+    # The given port codes that appear in an active sailing (one query for all of them).
+    def known_ports(_codes)
       raise NotImplementedError
     end
   end

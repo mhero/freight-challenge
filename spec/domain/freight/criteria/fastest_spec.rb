@@ -14,8 +14,7 @@ RSpec.describe Freight::Criteria::Fastest do
 
   describe "on the sample schedule" do
     it "returns QRST: 17 days, against 22 days for ERXQ + ETRG" do
-      route = Freight::RouteSearch.new(repository: sample_repository)
-                                  .best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+      route = sample_search.best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
 
       expect(route.sailing_codes).to eq(%w[ QRST ])
       expect(route.duration_days).to eq(17)

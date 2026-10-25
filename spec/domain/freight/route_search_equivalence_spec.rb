@@ -23,7 +23,7 @@ RSpec.describe Freight::RouteSearch, "against the exhaustive search" do
 
       12.times do |round|
         sailings = random_schedule(rng, 28)
-        fast = described_class.new(repository: InMemorySailingRepository.new(sailings))
+        fast = described_class.new(sailings)
         exhaustive = BruteForceRouteSearch.new(sailings)
 
         ports.permutation(2).each do |origin, destination|

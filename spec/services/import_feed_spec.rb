@@ -10,7 +10,7 @@ RSpec.describe ImportFeed do
   end
 
   def departures(port = "CNSHA")
-    ActiveRecordSailingRepository.new.departures_from(port)
+    ActiveRecordSailingRepository.new.reachable_from(port).select { |sailing| sailing.origin_port == port }
   end
 
   describe "the sample feed" do

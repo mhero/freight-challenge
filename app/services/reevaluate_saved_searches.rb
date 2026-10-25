@@ -10,7 +10,7 @@ class ReevaluateSavedSearches
 
   def initialize(feed_import:, repository: ActiveRecordSailingRepository.new)
     @feed_import = feed_import
-    @search = Freight::RouteSearch.new(repository: repository)
+    @repository = repository
   end
 
   # Returns the number of searches fulfilled.
@@ -35,7 +35,9 @@ class ReevaluateSavedSearches
 
   def fulfill(search)
     criterion = Freight::Criteria.fetch(search.criterion)
-    route = @search.best_route(origin: search.origin_port, destination: search.destination_port, criterion: criterion)
+    sailings = @repository.reachable_from(search.origin_port)
+    route = Freight::RouteSearch.new(sailings)
+                                .best_route(origin: search.origin_port, destination: search.destination_port, criterion: criterion)
     return false unless route
 
     search.update!(status: "fulfilled", fulfilled_at: Time.current, fulfilled_import_id: @feed_import.id)

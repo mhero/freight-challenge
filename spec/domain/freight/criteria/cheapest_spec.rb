@@ -13,7 +13,7 @@ RSpec.describe Freight::Criteria::Cheapest do
   end
 
   describe "on the sample schedule" do
-    let(:search) { Freight::RouteSearch.new(repository: sample_repository) }
+    let(:search) { sample_search }
 
     it "returns all legs of the cheapest option: ERXQ + ETRG" do
       route = search.best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
@@ -62,14 +62,12 @@ RSpec.describe Freight::Criteria::Cheapest do
     end
 
     it "lets the tie-break decide between equal-cost alternatives" do
-      repository = InMemorySailingRepository.new(
-        [
-          leg("BBBB", "CNSHA", "NLRTM", "2022-02-01", "2022-03-10", "100"),
-          leg("AAAA", "CNSHA", "NLRTM", "2022-02-02", "2022-03-01", "100")
-        ]
-      )
+      sailings = [
+        leg("BBBB", "CNSHA", "NLRTM", "2022-02-01", "2022-03-10", "100"),
+        leg("AAAA", "CNSHA", "NLRTM", "2022-02-02", "2022-03-01", "100")
+      ]
 
-      route = Freight::RouteSearch.new(repository: repository)
+      route = Freight::RouteSearch.new(sailings)
                                   .best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
 
       expect(route.sailing_codes).to eq(%w[ AAAA ])

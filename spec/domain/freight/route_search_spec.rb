@@ -2,8 +2,7 @@ require "rails_helper"
 
 RSpec.describe Freight::RouteSearch do
   let(:criterion) { LowestTotalCriterion.new }
-  let(:repository) { InMemorySailingRepository.new(sailings) }
-  let(:search) { described_class.new(repository: repository) }
+  let(:search) { described_class.new(sailings) }
 
   def sailing(code, from, to, departs, arrives, eur)
     build_sailing(code: code, from: from, to: to, departs: departs, arrives: arrives, eur: eur)
@@ -35,9 +34,9 @@ RSpec.describe Freight::RouteSearch do
   end
 
   it "returns nil when there is no sailing between the ports" do
-    repository = InMemorySailingRepository.new([ sailing("ABCD", "CNSHA", "ESBCN", "2022-01-29", "2022-02-12", "10") ])
+    sailings = [ sailing("ABCD", "CNSHA", "ESBCN", "2022-01-29", "2022-02-12", "10") ]
 
-    expect(described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)).to be_nil
+    expect(described_class.new(sailings).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)).to be_nil
   end
 
   context "with more than two legs" do
@@ -122,71 +121,48 @@ RSpec.describe Freight::RouteSearch do
     end
   end
 
-  it "loads the departures of each port once per search, however often the port is reached" do
-    repository = InMemorySailingRepository.new(
-      [
-        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
-        sailing("AAAB", "CNSHA", "ESBCN", "2022-01-01", "2022-01-03", "20"),
-        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-05", "2022-01-06", "10")
-      ]
-    )
-
-    route = described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
-
-    expect(route.sailing_codes).to eq(%w[ AAAA BBBB ])
-    expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ])
-  end
-
-  it "loads a port again, from the earlier date, when a later-popped route reaches it sooner" do
-    repository = InMemorySailingRepository.new(
-      [
-        sailing("SLOW", "CNSHA", "ESBCN", "2022-01-01", "2022-01-20", "10"),
-        sailing("FAST", "CNSHA", "ESBCN", "2022-01-01", "2022-01-05", "20"),
-        sailing("ONWD", "ESBCN", "NLRTM", "2022-01-10", "2022-01-12", "10")
-      ]
-    )
-
-    route = described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
-
-    expect(route.sailing_codes).to eq(%w[ FAST ONWD ])
-    expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ESBCN ])
-  end
-
   it "queues only the best route to each sailing" do
-    repository = InMemorySailingRepository.new(
-      [
-        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
-        sailing("AAAB", "CNSHA", "ESBCN", "2022-01-01", "2022-01-03", "20"),
-        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-05", "2022-01-06", "10")
-      ]
-    )
+    sailings = [
+      sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
+      sailing("AAAB", "CNSHA", "ESBCN", "2022-01-01", "2022-01-03", "20"),
+      sailing("BBBB", "ESBCN", "NLRTM", "2022-01-05", "2022-01-06", "10")
+    ]
     queue = Freight::MinHeap.new
     allow(Freight::MinHeap).to receive(:new).and_return(queue)
     pushed = []
     allow(queue).to receive(:push).and_wrap_original { |original, key, route| pushed << route.sailing_codes; original.call(key, route) }
 
-    described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+    described_class.new(sailings).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
 
     expect(pushed.count(%w[ AAAB BBBB ])).to eq(0)
   end
 
   it "finds nothing when origin and destination are the same port" do
-    repository = InMemorySailingRepository.new([ sailing("AAAA", "CNSHA", "NLRTM", "2022-01-01", "2022-01-02", "10") ])
+    sailings = [ sailing("AAAA", "CNSHA", "NLRTM", "2022-01-01", "2022-01-02", "10") ]
 
-    expect(described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "CNSHA", criterion: criterion)).to be_nil
+    expect(described_class.new(sailings).best_route(origin: "CNSHA", destination: "CNSHA", criterion: criterion)).to be_nil
   end
 
-  it "asks the repository for one port at a time and only for reachable ports" do
-    repository = InMemorySailingRepository.new(
-      [
-        sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
-        sailing("BBBB", "ESBCN", "NLRTM", "2022-01-03", "2022-01-04", "10"),
-        sailing("ZZZZ", "BRSSZ", "DEHAM", "2022-01-03", "2022-01-04", "10")
-      ]
-    )
+  it "prefers a costlier but earlier arrival when only it connects in time" do
+    sailings = [
+      sailing("CHEP", "CNSHA", "ESBCN", "2022-01-01", "2022-01-20", "10"),
+      sailing("FAST", "CNSHA", "ESBCN", "2022-01-01", "2022-01-05", "20"),
+      sailing("ONWD", "ESBCN", "NLRTM", "2022-01-10", "2022-01-12", "10")
+    ]
 
-    described_class.new(repository: repository).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+    route = described_class.new(sailings).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
 
-    expect(repository.requested_ports).to eq(%w[ CNSHA ESBCN ])
+    expect(route.sailing_codes).to eq(%w[ FAST ONWD ])
+  end
+
+  it "ignores sailings that cannot be reached from the origin" do
+    sailings = [
+      sailing("AAAA", "CNSHA", "ESBCN", "2022-01-01", "2022-01-02", "10"),
+      sailing("ZZZZ", "BRSSZ", "NLRTM", "2022-01-03", "2022-01-04", "1")
+    ]
+
+    route = described_class.new(sailings).best_route(origin: "CNSHA", destination: "NLRTM", criterion: criterion)
+
+    expect(route).to be_nil
   end
 end
