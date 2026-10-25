@@ -114,6 +114,19 @@ RSpec.describe FreightCli::Runner do
     expect(run.error["message"]).to include("boom")
   end
 
+  it "reports a search that hits its resource limit with exit 1 and prints no route" do
+    allow_any_instance_of(ActiveRecordSailingRepository)
+      .to receive(:reachable_from).and_raise(Freight::SearchTimeout, "search exceeded its time limit (30000 ms); no route returned")
+
+    run = run_cli(stdin: "CNSHA\nNLRTM\ncheapest\n")
+
+    expect(run.exit_code).to eq(1)
+    expect(run.stdout).to be_empty
+    expect(run.error).to include("code" => 503)
+    expect(run.error["message"]).to include("time limit")
+    expect(SavedSearch.count).to eq(0)
+  end
+
   it "prints usage on --help" do
     run = run_cli("--help")
 

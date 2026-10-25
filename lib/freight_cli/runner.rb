@@ -2,7 +2,7 @@ require "json"
 
 module FreightCli
   # Thin interface: picks the command, maps errors to the exit status contract.
-  #   0 success, 2 client error (JSON on stderr), 1 internal error (JSON on stderr)
+  #   0 success, 2 client error (JSON on stderr), 1 internal error or resource limit (JSON on stderr)
   class Runner
     Streams = Data.define(:stdin, :stdout, :stderr)
 
@@ -32,6 +32,8 @@ module FreightCli
       fail_with(422, e.message, exit_code: 2)
     rescue ImportFeedFile::FileMissing => e
       fail_with(404, e.message, exit_code: 2)
+    rescue Freight::SearchTimeout => e
+      fail_with(503, e.message, exit_code: 1)
     rescue StandardError => e
       fail_with(500, "internal error: #{e.class}: #{e.message}", exit_code: 1)
     end
