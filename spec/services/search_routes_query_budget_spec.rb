@@ -35,8 +35,11 @@ RSpec.describe SearchRoutes, "query budget" do
   it "stays within the budget for every criterion" do
     ImportFeed.call(chain_feed(7), source: "seven hops")
 
-    %w[ cheapest-direct cheapest fastest ].each do |criterion|
-      expect(queries_run { search("AAAAA", "HHHHH", criterion) }.size).to be <= 2
+    # cheapest-direct needs a single sailing, so it asks for the first hop; the others for the whole chain.
+    { "cheapest-direct" => "BBBBB", "cheapest" => "HHHHH", "fastest" => "HHHHH" }.each do |criterion, destination|
+      queries = queries_run { expect(search("AAAAA", destination, criterion).route).to be_present }
+
+      expect(queries.size).to be <= 2
     end
   end
 

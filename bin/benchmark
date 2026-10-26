@@ -1,0 +1,146 @@
+#!/usr/bin/env ruby
+# Synthetic benchmark of the route search at several sizes.
+#
+#   docker compose run --rm -e SEED_ON_BOOT=false app bin/benchmark 10000 100000 1000000
+#
+# For each size it builds a random schedule inside a transaction that is rolled back at the end (your data
+# is not touched), then runs a fixed, seeded set of searches and prints a Markdown table.
+#
+# Environment: PORTS (default: sailings / 10), DAYS (90), QUERIES (9), SEED (42),
+#              SEARCH_STATEMENT_TIMEOUT_MS (the search limit, see the README).
+#
+# Peak memory is the process peak (VmHWM from /proc), so it only grows from one size to the next:
+# list sizes in ascending order. "n/a" when /proc is not available.
+require_relative "../config/environment"
+
+ActiveRecord::Base.logger = nil
+
+DEFAULT_SIZES = [ 10_000, 100_000 ].freeze
+BATCH = 10_000
+CRITERIA = %w[ cheapest fastest cheapest-direct ].freeze
+
+def port_code(index)
+  high, low = index.divmod(36**3)
+  "Z#{("A".ord + high).chr}#{low.to_s(36).upcase.rjust(3, "0")}"
+end
+
+def now
+  Process.clock_gettime(Process::CLOCK_MONOTONIC)
+end
+
+def median(values)
+  sorted = values.sort
+  sorted[sorted.size / 2]
+end
+
+def peak_memory_mb
+  line = File.readlines("/proc/self/status").find { |text| text.start_with?("VmHWM:") }
+  line ? format("%.0f", line.split[1].to_f / 1024) : "n/a"
+rescue SystemCallError
+  "n/a"
+end
+
+# Builds the schedule with batched inserts. Rates come from one INSERT ... SELECT. Returns seconds taken.
+def load_schedule(sailings:, ports:, days:, rng:)
+  started = now
+  feed_import = FeedImport.create!(
+    source: "benchmark", checksum: SecureRandom.hex(32), status: "completed", raw_payload: "{}",
+    started_at: Time.current, finished_at: Time.current
+  )
+  start = Date.new(2022, 1, 1)
+  (0...(days + 21)).each_slice(BATCH) do |offsets|
+    # insert_all skips dates that already have a rate (for example after bin/test-pack): real data stays as it is.
+    ExchangeRate.insert_all(
+      offsets.map { |offset| { date: start + offset, currency: "usd", rate: BigDecimal("1.1"), import_id: feed_import.id } }
+    )
+  end
+
+  sailings.times.each_slice(BATCH) do |indexes|
+    rows = indexes.map do |index|
+      origin = rng.rand(ports)
+      destination = (origin + 1 + rng.rand(ports - 1)) % ports
+      departure = start + rng.rand(days)
+      {
+        sailing_code: format("B%07d", index), origin_port: port_code(origin), destination_port: port_code(destination),
+        departure_date: departure, arrival_date: departure + 1 + rng.rand(20), active: true,
+        first_import_id: feed_import.id, last_seen_import_id: feed_import.id
+      }
+    end
+    Sailing.insert_all!(rows)
+  end
+
+  ApplicationRecord.connection.execute(<<~SQL.squish)
+    INSERT INTO rates (sailing_id, import_id, amount, currency, created_at)
+    SELECT id, #{Integer(feed_import.id)},
+           to_char(50 + (id % 1950) + ((id * 7) % 100) / 100.0, 'FM9999990.00'),
+           CASE WHEN id % 2 = 0 THEN 'EUR' ELSE 'USD' END, now()
+    FROM sailings WHERE first_import_id = #{Integer(feed_import.id)}
+  SQL
+  ApplicationRecord.connection.execute("ANALYZE sailings, rates, exchange_rates")
+  now - started
+end
+
+# One search the way SearchRoutes does it, split in two timings. Returns a hash of measurements.
+def measure(repository, origin, destination, criterion)
+  statements = []
+  subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+    next if payload[:name] == "SCHEMA" || payload[:sql].match?(/\A\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE SAVEPOINT|SET LOCAL)\b/i)
+
+    statements << payload[:sql]
+  end
+
+  loaded_at = nil
+  started = now
+  # A savepoint, so a timeout does not abort the benchmark's own transaction.
+  ApplicationRecord.transaction(requires_new: true) do
+    sailings = repository.reachable_from(origin)
+    loaded_at = now
+    route = Freight::RouteSearch.new(sailings).best_route(
+      origin: origin, destination: destination, criterion: Freight::Criteria.fetch(criterion)
+    )
+    { status: route ? "found" : "no route", loaded: sailings.size, db: loaded_at - started, search: now - loaded_at, total: now - started, queries: statements.size }
+  end
+rescue Freight::SearchTimeout
+  { status: "timeout", loaded: 0, db: now - started, search: 0.0, total: now - started, queries: statements.size }
+ensure
+  ActiveSupport::Notifications.unsubscribe(subscriber)
+end
+
+def benchmark(sailings)
+  ports = Integer(ENV.fetch("PORTS", [ sailings / 10, 2 ].max))
+  days = Integer(ENV.fetch("DAYS", 90))
+  count = Integer(ENV.fetch("QUERIES", 9))
+  seed = Integer(ENV.fetch("SEED", 42))
+  results = nil
+  load_seconds = nil
+
+  ApplicationRecord.transaction do
+    load_seconds = load_schedule(sailings: sailings, ports: ports, days: days, rng: Random.new(seed))
+    picker = Random.new(seed + 1)
+    queries = Array.new(count) do |index|
+      origin = picker.rand(ports)
+      [ port_code(origin), port_code((origin + 1 + picker.rand(ports - 1)) % ports), CRITERIA[index % CRITERIA.size] ]
+    end
+    repository = ActiveRecordSailingRepository.new
+    results = queries.map { |origin, destination, criterion| measure(repository, origin, destination, criterion) }
+    raise ActiveRecord::Rollback
+  end
+
+  totals = results.map { |result| result[:total] * 1000 }
+  [
+    sailings, ports, format("%.1f", load_seconds), format("%.0f", median(totals)), format("%.0f", totals.max),
+    format("%.0f", median(results.map { |result| result[:db] * 1000 })),
+    format("%.0f", median(results.map { |result| result[:search] * 1000 })),
+    median(results.map { |result| result[:loaded] }), results.map { |result| result[:queries] }.max,
+    results.map { |result| result[:status] }.tally.map { |status, n| "#{n} #{status}" }.join(", "), peak_memory_mb
+  ]
+end
+
+sizes = ARGV.empty? ? DEFAULT_SIZES : ARGV.map { |value| Integer(value) }
+header = [ "sailings", "ports", "load s", "p50 ms", "max ms", "p50 db ms", "p50 search ms", "p50 sailings loaded", "max SQL queries", "outcomes", "peak RSS MB" ]
+puts "| #{header.join(" | ")} |"
+puts "|#{" --- |" * header.size}"
+sizes.each do |size|
+  puts "| #{benchmark(size).join(" | ")} |"
+  $stdout.flush
+end

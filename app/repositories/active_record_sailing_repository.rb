@@ -39,7 +39,9 @@ class ActiveRecordSailingRepository
   def within_snapshot(&block)
     options = ApplicationRecord.connection.transaction_open? ? {} : { isolation: :repeatable_read }
     ApplicationRecord.transaction(**options) do
-      ApplicationRecord.connection.execute("SET LOCAL statement_timeout = #{@statement_timeout_ms}")
+      ApplicationRecord.connection.execute(
+        ApplicationRecord.sanitize_sql_array([ "SET LOCAL statement_timeout = ?", Integer(@statement_timeout_ms) ])
+      )
       block.call
     end
   end

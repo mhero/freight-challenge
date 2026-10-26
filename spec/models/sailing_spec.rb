@@ -23,10 +23,10 @@ RSpec.describe Sailing do
       expect(result.rows.first.last(2)).to eq(%w[ 10.00 USD ])
     end
 
-    it "keeps only sailings leaving the given origin or reachable from it" do
+    it "leaves out sailings that are not reachable from the given origin" do
       create(:sailing, origin_port: "ESBCN", destination_port: "BRSSZ", departure_date: Date.new(2022, 2, 5)).tap { |other| create(:rate, sailing: other) }
 
-      expect(codes("CNSHA").size).to eq(3)
+      expect(codes("CNSHA").size).to eq(2)
       expect(codes("ESBCN").size).to eq(1)
     end
 

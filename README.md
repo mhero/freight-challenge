@@ -9,13 +9,6 @@ The original task is in [docs/CHALLENGE.md](docs/CHALLENGE.md).
 
 **Docker is the only thing you need installed.**
 
-## Contents
-
-[Quick start](#quick-start) · [Everyday commands](#everyday-commands) · [Searching](#searching) ·
-[Loading data](#loading-data) · [Saved searches](#saved-searches-and-notifications) · [Errors](#errors-and-exit-codes) ·
-[Configuration](#configuration) · [Tests](#tests) · [How it is built](#how-it-is-built) · [Rules](#business-rules) ·
-[Scale](#scale-path) · [Assumptions and questions](#assumptionsquestions)
-
 ## Quick start
 
 ```sh
@@ -23,9 +16,8 @@ The original task is in [docs/CHALLENGE.md](docs/CHALLENGE.md).
 docker compose run -d --name freight-app app sleep infinity
 until docker logs freight-app 2>&1 | grep -q "Seed feed"; do sleep 1; done    # wait until setup is done
 
-# 2. Ask as many questions as you want.
-printf 'CNSHA\nNLRTM\ncheapest-direct\n' > input.txt
-docker exec -i freight-app bin/freight < input.txt
+# 2. Ask a question: three lines (origin, destination, criterion) per run.
+printf 'CNSHA\nNLRTM\ncheapest-direct\n' | docker exec -i freight-app bin/freight
 
 # 3. When you are done.
 docker rm -f freight-app && docker compose down
@@ -57,12 +49,13 @@ These assume the container from the quick start is running.
 
 | I want to... | Command |
 | --- | --- |
-| Search | `docker exec -i freight-app bin/freight < input.txt` |
+| Search | `printf 'CNSHA\nNLRTM\ncheapest\n' \| docker exec -i freight-app bin/freight` |
 | Import a feed file | `docker cp my.json freight-app:/tmp/my.json` then `docker exec freight-app bin/freight import /tmp/my.json` |
 | See fulfilled saved searches | `docker exec freight-app bin/freight notifications list` |
 | Mark them as read | `docker exec freight-app bin/freight notifications ack 1 2` (or `ack --through 5`) |
 | See setup logs | `docker logs freight-app` |
 | Run the tests | `bin/docker-test` |
+| Benchmark the search | `docker compose run --rm -e SEED_ON_BOOT=false app bin/benchmark 10000 100000` (see [Scale](#scale-path)) |
 | Run the scenario test pack | `bin/test-pack` (wipes the local database) |
 | Stop | `docker rm -f freight-app` then `docker compose down` (add `-v` to delete the database too) |
 | Style and security checks | `docker compose run --rm app bin/rubocop` and `bin/brakeman` |
@@ -76,14 +69,14 @@ boots Rails three times (migrations check, seed check, the command) and removes 
 the PostgreSQL volume.
 
 ```sh
-docker compose run --rm -T app bin/freight < input.txt
+printf 'CNSHA\nNLRTM\ncheapest\n' | docker compose run --rm -T app bin/freight
 docker compose run --rm -v "$PWD/my.json:/feeds/my.json" app bin/freight import /feeds/my.json
 docker compose run --rm app bin/freight notifications list
 ```
 
 ## Searching
 
-Input is three lines: origin port, destination port, criterion.
+Input is exactly three lines: origin port, destination port, criterion. One query per run; extra lines are an error.
 
 | Criterion | Returns |
 | --- | --- |
@@ -124,7 +117,8 @@ docker compose exec db psql -U freight freight_development \
 1. A search with no answer (no route, or an unknown port) prints `[]`, exits 0 and is **saved**. The same
    question is saved only once while it is pending.
 2. After every import, pending searches are checked again. Those that now have a route are marked fulfilled and
-   a notification is written for each, once.
+   a notification is written for each, once. Pending searches are grouped by origin: the reachable sailings of an
+   origin are loaded once and every (destination, criterion) search of that origin runs in memory over them.
 3. You read them with `notifications list` and clear them with `notifications ack`.
    `list` accepts `--status unacknowledged|acknowledged|all`, `--limit`, `--after-id` (paging), `--origin`,
    `--destination` and `--criterion`.
@@ -143,6 +137,7 @@ next step; it needs endpoint registration, signing and retries, so it is documen
 | No route, or a well-formed unknown port | `[]` | warning for unknown ports; the search is saved | 0 |
 | Malformed port, invalid criterion, missing or extra input lines, bad command | empty | `{"error":{"code":422 or 400,...}}` | 2 |
 | Import file missing (404) or invalid feed (422) | empty | `{"error":{...}}` | 2 |
+| Search hit its time limit (statement timeout) | empty, no route | `{"error":{"code":503,...}}` | 1 |
 | Internal error | empty | `{"error":{"code":500,...}}` | 1 |
 
 ## Configuration
@@ -153,6 +148,7 @@ next step; it needs endpoint registration, signing and retries, so it is documen
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `freight` / `freight` / `freight_development` | Local defaults; override in a git-ignored `.env` file |
 | `FEED_PATH` | `data/response.json` | Feed imported at container start |
 | `SEED_ON_BOOT` | `true` | `false` skips the startup import (always skipped in tests) |
+| `SEARCH_STATEMENT_TIMEOUT_MS` | `30000` | PostgreSQL statement timeout for the search queries; when it fires the search fails with exit 1 and never returns a partial route |
 
 Imports are serialized with a PostgreSQL advisory lock, so two containers starting together are safe.
 `db/schema.rb` is generated by the first `db:prepare`; commit it after the first run.
@@ -162,7 +158,8 @@ Imports are serialized with a PostgreSQL advisory lock, so two containers starti
 - **`bin/docker-test`** runs the RSpec suite in Docker against a separate test database, with SimpleCov
   coverage in `coverage/`. Domain specs use an in-memory repository; the rest use PostgreSQL. It covers the
   three challenge scenarios, saved searches fulfilled by a second feed, and two real-thread specs
-  (same-feed imports, row locking).
+  (same-feed imports; searches running while an import commits), plus a query-budget spec (at most 2 queries per
+  search, same count for short and long chains, one load per origin when re-checking) and a brute-force equivalence spec.
 - **`bin/test-pack`** replays [test-pack/PLAN.md](test-pack/PLAN.md) end to end through the CLI (feeds, queries,
   error cases, a snapshot import) and compares the output with the expected results.
 - **CI:** `.github/workflows/ci.yml` builds the image and runs the same suite on every push and pull request,
@@ -183,10 +180,12 @@ bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse input, ca
 
 - **Criteria are strategies** behind one base class. A new criterion is a new class plus one line in
   `Freight::Criteria.all`; existing ones are not touched.
-- **Route search** is a Dijkstra search over sailings that asks the repository for one port at a time, so the whole
-  schedule is never loaded. Each port is read from the earliest arrival date seen (the date filter runs in SQL, on a
-  partial index of active sailings), a port is read again only when a route reaches it sooner, and a route is queued
-  only if it beats the best one already queued for its last sailing. There is no limit on the number of legs.
+- **Route search:** at most 2 queries, whatever the number of legs. The repository's `reachable_from(origin)` loads
+  every active, priced sailing reachable through time-feasible connections with one recursive CTE, plus one query
+  for the exchange rates involved, in a single snapshot with a statement timeout. SQL decides what is priced; the
+  conversion to EUR is done once, in Ruby, with `BigDecimal`. Dijkstra then runs in memory over **sailings**, not
+  ports (connections depend on time, so a port has no single best label). A brute-force equivalence spec checks
+  that the result is exact: no leg cap, no horizon, no best-so-far answer.
 - **Why Rails:** saved searches need persistence, a central database serves future interfaces and users, and Rails
   conventions keep the code easy to navigate. The domain does not depend on ActiveRecord: a different store means a
   different repository adapter.
@@ -212,20 +211,6 @@ bin/freight -> FreightCli::Runner (lib/freight_cli)        thin: parse input, ca
 - **Expected on the sample feed:** cheapest-direct is **ABCD** (about 523.36 EUR); cheapest is **ERXQ + ETRG**
   (about 322.89 EUR); fastest is **QRST** (17 days, against 22 for ERXQ + ETRG).
 
-## Scale path
-
-Built: batched upserts, a partial index on active sailings `(origin_port, departure_date, sailing_code)`, per-port expansion read from the arrival date in SQL, one queue entry per improvement, a `last_seen_import_id`
-on sailings, and append-only rates.
-
-Current limits: a feed is parsed in memory (and stored as raw text), imports run in one transaction, every loaded
-sailing is converted to EUR in Ruby on each search (storing the EUR price at import would remove this, but it must be
-recomputed whenever exchange rates change), and the route search has no leg cap, so it can be slow on very dense
-schedules.
-
-Not built, next steps: a long-running Rails served over HTTP (boot once, many queries; the services are already
-separate from the CLI, so a controller would only call them), streaming parser, staging table or `COPY`, parallel re-checking through a job queue and worker,
-Redis cache for hot routes, webhook delivery, sharding.
-
 ## Assumptions/Questions
 
 ### Search
@@ -244,14 +229,9 @@ Redis cache for hot routes, webhook delivery, sharding.
 6. **Maximum legs:** is there a sensible cap, given the cost of an unbounded search?
 7. **Users:** is one shared set of saved searches fine, or should searches and notifications belong to a user?
 
-**Possible improvement: a cache.** Every search reads the database (one query per port visited). Repeated queries could
-be answered from a cache keyed by origin, destination and criterion, which would avoid hitting the database over and
-over. It is not built because the data is small and each CLI call is a separate process, so the cache would have to live
-outside it (PostgreSQL table or Redis). The hard part is consistency when the source of truth changes: the cache must be
-invalidated by every import that changes data, even one that only adds exchange rates or deactivates sailings. A simple
-and safe rule is to store, with each entry, the id of the last completed import it was computed against, and to ignore
-entries from older imports. Without such a rule, a cached answer could outlive the data it came from and show a sailing
-that has been deactivated or a rate that has changed.
+**Possible improvement: a cache.** Not built: the data is small and each CLI call is its own process. If added,
+store with each entry the id of the last import it was computed against and ignore older entries, so a cached
+answer never outlives its data.
 
 ### Import
 
@@ -268,7 +248,5 @@ that has been deactivated or a rate that has changed.
 3. **Unpriced sailings:** sailings without a rate or exchange rate are excluded everywhere. Should they be shown or flagged?
 4. **Conflicting sailing fields:** a sailing code with different route or dates is excluded. Is that right, or should the latest win?
 
-**Possible improvement: smarter updates.** Imports are deliberately simple: a feed replaces the current state. If MapReduce
-sends frequent or partial updates, a smarter merge could use versioning, for example a version or timestamp per sailing
-and rate so that older data never overwrites newer data, plus delta feeds that add or remove only what changed. We kept
-it simple for this challenge.
+**Possible improvement: smarter updates.** If feeds become frequent or partial, add a version or timestamp per
+sailing and rate (older data never overwrites newer) and delta feeds. Kept simple here.

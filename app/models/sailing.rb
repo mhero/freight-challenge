@@ -46,6 +46,6 @@ class Sailing < ApplicationRecord
   def self.known_ports(codes)
     return [] if codes.empty?
 
-    connection.select_values(sanitize_sql_array([ KNOWN_PORTS_SQL, codes ]), "Sailing Known Ports", [], preparable: false)
+    connection.select_all(sanitize_sql_array([ KNOWN_PORTS_SQL, codes ]), "Sailing Known Ports", [], preparable: false).rows.flatten
   end
 end
