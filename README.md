@@ -13,6 +13,7 @@ The original task is in [docs/CHALLENGE.md](docs/CHALLENGE.md).
 
 ```sh
 # 1. Start the app once. It builds the image, starts PostgreSQL, creates the tables and imports data/response.json.
+docker rm -f freight-app 2>/dev/null
 docker compose run -d --name freight-app app sleep infinity
 until docker logs freight-app 2>&1 | grep -q "Seed feed"; do sleep 1; done    # wait until setup is done
 
